@@ -41,7 +41,12 @@ split the way they are.
 
 ## Overview
 
-`witan-gossip` is a **production-grade, post-quantum cryptography (PQC) gossip protocol** implemented as a [WASM Component Model](https://component-model.bytecodealliance.org/) component for the **blockchain runtime**. It provides epidemic broadcast messaging with quantum-resistant cryptographic guarantees for validator-to-validator communication.
+`witan-gossip` is a **post-quantum cryptography (PQC) gossip protocol engine**, implemented as a [WASM Component Model](https://component-model.bytecodealliance.org/) component. It provides epidemic broadcast messaging with quantum-resistant cryptographic guarantees for validator-to-validator communication, and runs standalone — any host that can move bytes can drive it.
+
+> **Maturity:** this is a `0.x` release. The protocol and API work and are covered by tests and a
+> multi-node integration harness, but the cryptographic core has **not** had a third-party audit
+> (that's on the [roadmap](../docs/crates.io/roadmap.md)), and breaking changes are expected while
+> the version is below 1.0. Evaluate accordingly before putting it in front of value.
 
 ### What problem does it solve?
 

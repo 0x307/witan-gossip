@@ -1,18 +1,30 @@
 # Witan-Gossip
 
-A white-label, post-quantum cryptography (PQC) gossip protocol runtime, compiled as a
+A post-quantum cryptography (PQC) gossip protocol engine, compiled as a
 [WASM Component Model](https://component-model.bytecodealliance.org/) component. It provides
 epidemic broadcast messaging with quantum-resistant cryptographic guarantees for
 validator-to-validator communication in a blockchain validator mesh.
 
-This repository contains the **Gossip Protocol Runtime** — one of three cooperating WASM
-runtimes in a larger validator-node architecture:
+**`witan-gossip` is self-contained and useful on its own.** It has no required companions: it takes
+bytes in and gives bytes out, so any host that can move bytes — QUIC, TCP, WebTransport, a message
+broker, or your own transport — can drive it. Everything below is optional context, not a dependency
+list.
 
-| Runtime | Role | Repository |
+### Where it fits in a full validator node
+
+We're building it as one of three cooperating WASM runtimes, each an independent component with a
+clear ownership boundary. You can adopt this one without the other two.
+
+| Runtime | Role | Status |
 |---|---|---|
-| **Blockchain Runtime** | Owns consensus, block production, and state machine logic. Calls into the Gossip Runtime to publish messages and receive validated gossip. Has no direct network access. | (separate repo) |
-| **Gossip Protocol Runtime** (this repo) | Owns all PQC cryptographic operations and gossip protocol logic. Receives raw bytes from the NATS runtime, validates them, and delivers verified messages to the Blockchain Runtime. | `witan-gossip` |
-| **Erend-NATS Runtime** | Wraps `async-nats` client functionality. Owns subject routing, JetStream consumer management, and NATS cluster connectivity. | (separate repo) |
+| **Blockchain Runtime** | Owns consensus, block production, and state machine logic. Calls into the Gossip Runtime to publish messages and receive validated gossip. Has no direct network access. | Not yet published |
+| **Gossip Protocol Runtime** (this repo) | Owns all PQC cryptographic operations and gossip protocol logic. Validates incoming bytes and delivers verified messages to the host. | `witan-gossip` — this crate |
+| **Erend-NATS Runtime** | Wraps `async-nats` client functionality. Owns subject routing, JetStream consumer management, and NATS cluster connectivity. | Not yet published |
+
+The split is the point: transport concerns and cryptographic concerns evolve on different timelines,
+so a transport change never forces a re-review of the crypto core. See
+[`docs/crates.io/architecture.md`](docs/crates.io/architecture.md) for the full rationale, including
+an honest account of the risks the split introduces.
 
 ## What's in this repo
 
