@@ -77,3 +77,46 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo publish -p witan-gossip --dry-run
+
+  # Build the PACKAGED crate — the exact bytes that go to crates.io — for
+  # wasm32-wasip2, outside the workspace, the way a consumer gets it.
+  #
+  # This is not redundant with dry-run-publish. That job's verify step compiles
+  # for the host target, where src/component.rs is cfg'd out, so it cannot see
+  # anything the component path depends on. A missing `wit/` directory in the
+  # package would pass every other job here and break every consumer's wasm
+  # build on `cargo add`. Checking the crate we built is not the same as
+  # checking the crate we ship.
+  packaged-crate-consumer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-tools
+
+      - name: package the crate
+        run: cargo package -p witan-gossip
+
+      - name: build the packaged crate for wasm32-wasip2
+        run: |
+          set -euo pipefail
+          pkg="$(find target/package -maxdepth 1 -type d -name 'witan-gossip-*' | head -1)"
+          test -n "$pkg" || { echo "no packaged crate directory found"; exit 1; }
+          echo "building packaged crate at $pkg"
+          test -f "$pkg/wit/gossip-protocol.wit" \
+            || { echo "PACKAGED CRATE IS MISSING wit/ — consumers cannot build the component"; exit 1; }
+          cd "$pkg"
+          cargo build --target wasm32-wasip2 --release
+
+      - name: packaged artifact is a component exporting the interface
+        run: |
+          set -euo pipefail
+          pkg="$(find target/package -maxdepth 1 -type d -name 'witan-gossip-*' | head -1)"
+          artifact="$pkg/target/wasm32-wasip2/release/witan_gossip.wasm"
+          wasm-tools validate --features all "$artifact"
+          wasm-tools component wit "$artifact" \
+            | grep -q 'export witan:gossip/gossip-protocol@0.1.0;'
