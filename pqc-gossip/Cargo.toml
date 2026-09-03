@@ -4,9 +4,9 @@ version = "0.1.0"
 edition = "2021"
 description = "Post-quantum cryptography gossip protocol WASM component (white-label gossip runtime)"
 license = "Apache-2.0 OR MIT"
-repository = "https://github.com/witan-gossip/witan-gossip"
+repository = "https://github.com/0x307/witan-gossip"
 readme = "README.md"
-authors = ["Witan-Gossip Contributors"]
+authors = ["0x307"]
 
 # cargo-component metadata: declares the WIT package identity
 [package.metadata.component]

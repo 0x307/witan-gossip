@@ -3,8 +3,8 @@
 **The post-quantum-native gossip protocol engine for blockchains and mesh networks.**
 
 [![Crates.io](https://img.shields.io/crates/v/witan-gossip.svg)](https://crates.io/crates/witan-gossip)
-[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](https://github.com/Witan-Gossip/witan-gossip)
-[![Build Status](https://img.shields.io/github/actions/workflow/status/Witan-Gossip/witan-gossip/ci.yml?branch=main)](https://github.com/Witan-Gossip/witan-gossip/actions)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](https://github.com/0x307/witan-gossip)
+[![Build Status](https://img.shields.io/github/actions/workflow/status/0x307/witan-gossip/ci.yml?branch=main)](https://github.com/0x307/witan-gossip/actions)
 [![WASM Component](https://img.shields.io/badge/target-wasm32--unknown--unknown-orange.svg)](https://webassembly.org/)
 [![FIPS 203](https://img.shields.io/badge/FIPS-203%20ML--KEM--768-green.svg)](https://csrc.nist.gov/pubs/fips/203/final)
 [![FIPS 204](https://img.shields.io/badge/FIPS-204%20ML--DSA--65-green.svg)](https://csrc.nist.gov/pubs/fips/204/final)
@@ -1426,7 +1426,7 @@ Unless you explicitly state otherwise, any contribution intentionally submitted 
 | Version | `0.1.0` |
 | Edition | Rust 2021 |
 | License | `Apache-2.0 OR MIT` |
-| Repository | https://github.com/Witan-Gossip/witan-gossip |
+| Repository | https://github.com/0x307/witan-gossip |
 | WIT package | `witan:gossip@0.1.0` |
 | Crate types | `cdylib` (WASM component), `rlib` (native library) |
 | WASM target | `wasm32-unknown-unknown` |
