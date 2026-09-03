@@ -1,6 +1,6 @@
 Witan (gossip)
 
-Witan — the Anglo-Saxon council that convened, circulated what each member knew, and reached a binding decision. That is literally gossip dissemination + quorum + state machine in one word. Free.
+Witan — the Anglo-Saxon council that convened, circulated what each member knew, and reached a binding decision. That is literally gossip dissemination + quorum + state machine in one word.
 
 ---
 
