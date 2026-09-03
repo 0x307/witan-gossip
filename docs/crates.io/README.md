@@ -55,8 +55,8 @@ Combine that with:
 
 - **Post-quantum by default, not bolted on.** ML-KEM-768 + X25519 hybrid KEM and ML-DSA-65 are the
   baseline, not an opt-in mode. There is no classical-only code path to accidentally ship.
-- **WASM Component Model portability.** Compile once to `wasm32-unknown-unknown`, embed the same
-  binary in a Rust, Go, Python, or Node.js host via `wasmtime`. One audited crypto core, any
+- **WASM Component Model portability.** Compile once to `wasm32-wasip2`, embed the same
+  binary in a Rust, Go, Python, or Node.js host via `wasmtime`. One auditable crypto core, any
   language, no re-implementation risk.
 - **A deliberately small, auditable core.** No sockets, no async runtime, no libp2p, no TLS stack
   inside the component. Fewer moving parts in the security-critical layer means a smaller attack

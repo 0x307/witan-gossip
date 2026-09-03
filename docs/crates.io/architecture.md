@@ -84,10 +84,18 @@ it's also what makes the core small enough to audit properly.
 
 ## 4. Why abstract the layers this way?
 
-1. **The WASM sandbox has no sockets, by design.** `wasm32-unknown-unknown` components cannot open
-   network connections. This isn't a limitation we worked around — it's a security property we
-   deliberately kept. The crypto core simply *cannot* leak key material onto the network by
-   accident, because it has no code path capable of doing so.
+1. **The component imports no network capability, and you can check that yourself.** Under the
+   Component Model a module can only do what its imports allow, and WASI *does* offer sockets
+   (`wasi:sockets`) — we simply never import them. The built component declares 17 imports: clocks,
+   random, and stdio. None of them can open a connection. So the crypto core cannot leak key
+   material onto the network by accident, because it holds no capability to do so:
+
+   ```bash
+   wasm-tools component wit target/wasm32-wasip2/release/witan_gossip.wasm | grep import
+   ```
+
+   That is a stronger guarantee than "the sandbox forbids it," because it is a property of this
+   artifact that you can verify in one command rather than a property you have to take on trust.
 
 2. **A small core is an auditable core.** There is no TLS stack, no async runtime, no libp2p, no
    socket code inside the component that handles your private keys. Every dependency in the crypto
@@ -100,10 +108,11 @@ it's also what makes the core small enough to audit properly.
    a browser, or a message broker such as NATS/JetStream via a companion crate. You are never locked
    into a specific transport choice by the cryptography.
 
-4. **One engine, any host language.** The WIT world and the accompanying wasm-bindgen-style ABI
-   (see [`pqc-gossip/abi/`](../../pqc-gossip/abi/)) mean the same binary can be embedded from Rust,
-   Go, Python, or fronted by a gRPC service — without re-implementing ML-KEM-768/ML-DSA-65 in each
-   language, which is exactly the kind of place cryptography implementations go wrong.
+4. **One engine, any host language.** The WIT world means the same binary can be embedded from any
+   host with Component Model tooling — Rust via `wasmtime::component`, Go via `wit-bindgen-go`,
+   Python via `componentize-py` — with bindings *generated from the interface* rather than
+   hand-written per language. No re-implementation of ML-KEM-768/ML-DSA-65 anywhere, which is
+   exactly the kind of place cryptography implementations go wrong.
 
 5. **Independent upgrade cadence.** Transport concerns (new QUIC versions, new broker features,
    congestion control tuning) evolve on a completely different timeline than cryptographic

@@ -11,10 +11,14 @@ does, see [`architecture.md`](architecture.md).
 
 | Mode | When to use it | How |
 |---|---|---|
-| **Native Rust `rlib`** | Your host is Rust and you don't need WASM sandboxing | `witan-gossip = "0.1"` as a normal dependency |
-| **WASM Component via `wasmtime`** | You want the sandboxing/portability guarantees, or a non-Rust host | Compile with `cargo component build --release`, load with `wasmtime::component` |
-| **wasm-bindgen-style ABI** | Go / Python / any host with a `wasmtime` binding, without full Component Model tooling | Use the bindings in [`pqc-gossip/abi/`](../../pqc-gossip/abi/) |
-| **gRPC / Protobuf proxy** | You want a language-agnostic network boundary instead of embedding WASM directly | Generate stubs from [`pqc-gossip/abi/proto/gossip.proto`](../../pqc-gossip/abi/proto/gossip.proto) and front the engine with a small gRPC server |
+| **Native Rust `rlib`** | Your host is Rust and you don't need WASM sandboxing | `witan-gossip = { version = "0.1", default-features = false }` as a normal dependency |
+| **WASM Component via `wasmtime`** | You want the sandboxing/portability guarantees, or a non-Rust host | Build with `cargo build --target wasm32-wasip2 --release`, load with `wasmtime::component` |
+| **Go / Python host** | Your host isn't Rust | Generate bindings from [the WIT interface](../../pqc-gossip/wit/gossip-protocol.wit) with `wit-bindgen-go` or `componentize-py` |
+| **gRPC / Protobuf proxy** | You want a language-agnostic network boundary instead of embedding WASM directly | Generate a service contract from the WIT interface and front the engine with a small gRPC server |
+
+> **Note on the `rlib` row:** `default-features = false` turns off the `component` feature. You want
+> that when embedding this crate as a library inside your *own* component — otherwise its exported
+> interface is merged into your component's world. It makes no difference for a native host.
 
 ---
 
@@ -74,29 +78,27 @@ handshake and gossip exchange, which is a good template for your own integration
 
 ## 4. Non-Rust hosts (Go, Python)
 
-`witan-gossip` also compiles to a plain `wasm32-unknown-unknown` binary with a wasm-bindgen-style
-ABI (pointer/length pairs, no Component Model tooling required). Bindings for this ABI live in
-[`pqc-gossip/abi/`](../../pqc-gossip/abi/):
+The component is a standard WASM Component, so Go and Python hosts generate their bindings from the
+same [`wit/gossip-protocol.wit`](../../pqc-gossip/wit/gossip-protocol.wit) the Rust guest is
+generated from:
 
-```go
-import gossip "github.com/witan-gossip/witan-gossip/abi/go"
+```bash
+# Go
+wit-bindgen-go generate --world gossip-world pqc-gossip/wit
 
-client, _ := gossip.NewGossipClientFromFile("pqc_gossip.wasm")
-defer client.Close()
-client.Init("{}")
-msgID, _ := client.Publish(0, []byte("hello world"))
+# Python
+componentize-py --wit-path pqc-gossip/wit --world gossip-world bindings .
 ```
 
-```python
-from gossip import GossipClient
+Drive the resulting bindings with your language's `wasmtime` runtime the same way the Rust host in
+§3 does.
 
-client = GossipClient(wasm_path="pqc_gossip.wasm")
-client.init({})
-msg_id = client.publish(0, b"hello world")
-```
-
-See [`pqc-gossip/abi/README.md`](../../pqc-gossip/abi/README.md) for the full calling convention and
-current status of each language binding.
+**We do not ship hand-written bindings for these languages, deliberately.** An earlier revision of
+this repository did, and they had drifted from the interface they wrapped — wrong symbol names,
+wrong target, wrong allocator — while still reading like working code. A binding that has silently
+drifted from a *cryptographic* interface is worse than no binding, so the interface is published as
+the contract and generation is left to the tools that stay in sync with it. First-party generated
+examples are on the roadmap.
 
 ---
 

@@ -25,7 +25,7 @@ who sent a message and when**, without re-establishing trust at every hop. Pair 
 
 - **Post-quantum by default, not bolted on** — ML-KEM-768 + X25519 hybrid KEM (FIPS 203) and
   ML-DSA-65 (FIPS 204) are the baseline, with no classical-only code path to accidentally ship.
-- **WASM Component Model portability** — one audited crypto core, embeddable in Rust, Go, Python,
+- **WASM Component Model portability** — one auditable crypto core, embeddable in Rust, Go, Python,
   or behind a gRPC boundary, with no per-language PQC re-implementation risk.
 - **A deliberately small, auditable core** — no sockets, no async runtime, no bundled transport
   stack inside the security-critical component.
@@ -1301,18 +1301,26 @@ fn handle_received_envelope(bytes: &[u8]) -> bool {
 
 ---
 
-## ABI Bindings
+## Language Bindings
 
-Language bindings for the WIT interface are planned in `pqc-gossip/abi/`:
+| Language | How | Status |
+|----------|-----|--------|
+| **Rust (native)** | Direct crate dependency (`rlib`) | ✅ Available |
+| **Rust (component host)** | `wasmtime::component::bindgen!` against `wit/gossip-protocol.wit` | ✅ Available — see [`wasmtime-test/`](../wasmtime-test/) |
+| **Go** | `wit-bindgen-go generate --world gossip-world pqc-gossip/wit` | ✅ Supported via generation; no first-party example yet |
+| **Python** | `componentize-py --wit-path pqc-gossip/wit --world gossip-world` | ✅ Supported via generation; no first-party example yet |
+| **gRPC/Protobuf** | Generate a service contract from the WIT, front the component with a server | 🔜 No first-party proto ships today |
 
-| Language | Binding Type | Status |
-|----------|-------------|--------|
-| **Rust** | Native `rlib` (direct crate dependency) | ✅ Available |
-| **Go** | `wit-bindgen-go` generated bindings | 🔜 Planned |
-| **Python** | `componentize-py` bindings | 🔜 Planned |
-| **gRPC/Protobuf** | Host-side gRPC proxy over WASM | 🔜 Planned |
+The WIT interface is the contract; bindings are generated from it rather than hand-written. That is
+a deliberate choice: an earlier revision of this repo shipped hand-written Go/Python/Rust bindings
+that had drifted from the interface — wrong symbol names, wrong target, a calling convention the
+crate never used — while still reading like working code. They have been removed. A binding that has
+silently drifted from a cryptographic interface is worse than no binding at all.
 
-For Rust hosts, use the crate directly as an `rlib` dependency. For other languages, embed the WASM component in a Wasmtime host and use the generated WIT bindings.
+The [`wasmtime-test/`](../wasmtime-test/) harness is a working multi-node example of the generated
+approach: it drives three in-process component instances through a full PQC handshake and gossip
+exchange, and its host bindings come from the same WIT the guest is built from, so the two cannot
+drift apart.
 
 ---
 
@@ -1420,15 +1428,20 @@ BFT quorum (`≥ 2/3` by default) ensures that a message is considered confirmed
 
 ### Expected Latency
 
-| Operation | Typical Latency |
-|-----------|----------------|
-| `gossip_init` (key generation) | 50–200 ms (ML-KEM + ML-DSA keygen) |
-| `gossip_encode_envelope` (sign) | 5–15 ms (ML-DSA-65 sign) |
-| `gossip_verify_envelope` (verify) | 3–10 ms (ML-DSA-65 verify) |
-| Full 4-message handshake (local) | 20–80 ms (2× KEM + 2× DSA ops) |
+| Operation | Measured (native) |
+|-----------|-------------------|
+| `gossip_init` (key generation) | ~2.5 ms (ML-KEM + ML-DSA keygen) |
+| `gossip_encode_envelope` (sign) | ~0.5 ms (ML-DSA-65 sign) |
+| `gossip_verify_envelope` (verify) | ~0.2 ms (ML-DSA-65 verify) |
 | `gossip_publish` (dedup check) | < 1 ms |
 
-> **Note:** Latency depends heavily on the target platform. WASM execution adds ~1.5–3× overhead compared to native. ML-KEM and ML-DSA operations are the dominant cost.
+> **How these were obtained:** measured on one x86-64 development machine, release profile,
+> 256-byte payload, best of 20 iterations after warm-up. They are indicative, not a benchmark suite
+> — run your own on your target hardware before sizing anything that matters. Earlier revisions of
+> this table carried estimates that overstated latency by 10–50×; these numbers replace them.
+>
+> Expect WASM execution to add roughly 1.5–3× over native. ML-KEM and ML-DSA operations dominate;
+> everything else in the path is hashing and serialization.
 
 ### Convergence Time
 

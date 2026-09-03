@@ -68,7 +68,7 @@ Combine that with:
 - **PQC as the default, not an add-on** — there's no classical-only code path to accidentally leave
   enabled in production, unlike stacks where PQC is an opt-in transport mode layered on top of an
   otherwise-classical stack.
-- **A WASM Component Model core** — the same audited binary embeds in Rust, Go, Python, or behind a
+- **A WASM Component Model core** — the same auditable binary embeds in Rust, Go, Python, or behind a
   gRPC boundary, instead of requiring a from-scratch PQC implementation per host language.
 - **A minimal, auditable surface** — no bundled networking stack to review, just the cryptographic
   and protocol state machine.

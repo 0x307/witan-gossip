@@ -87,19 +87,21 @@ rather than breaking changes.
 
 ## 5. Multi-language embedding as an extension point
 
-Because the engine is exposed through three parallel interfaces — a native Rust `rlib`, a WASM
-Component (WIT), and a wasm-bindgen-style ABI — you can build tooling around it in whatever
-language your organization standardizes on, without waiting for us to ship a first-party binding:
+Because the engine is exposed as both a native Rust `rlib` and a WASM Component, you can build
+tooling around it in whatever language your organization standardizes on, without waiting for us to
+ship a first-party binding:
 
 - **Rust** — direct crate dependency (`rlib`), zero indirection.
 - **Any Component Model host** — instantiate the `.wasm` via `wasmtime` (or another
   Component-Model-compatible runtime) and call the WIT functions directly.
-- **Go / Python (or anything with a `wasmtime` binding)** — use the ABI described in
-  [`pqc-gossip/abi/`](../../pqc-gossip/abi/), or write your own thin binding following the same
-  pointer/length calling convention.
-- **gRPC** — the [`gossip.proto`](../../pqc-gossip/abi/proto/gossip.proto) definition gives you a
-  network-boundary contract; front the engine with a small server and any gRPC client language
-  becomes a valid host.
+- **Go / Python** — generate bindings from
+  [the WIT interface](../../pqc-gossip/wit/gossip-protocol.wit) with `wit-bindgen-go` or
+  `componentize-py`. Generating from the interface is the point: hand-written bindings drift from
+  the API they wrap, and a binding that has drifted from a cryptographic interface is worse than no
+  binding at all.
+- **gRPC** — no first-party `.proto` ships today. The WIT interface is the source of truth, so
+  generate the service contract from it rather than maintaining a parallel hand-written schema, then
+  front the engine with a small server and any gRPC client language becomes a valid host.
 
 This means you can, for example, write a small sidecar in your language of choice that embeds the
 component and exposes it over a local socket or gRPC to the rest of your stack — a common pattern

@@ -87,6 +87,33 @@ interface gossip-protocol {
         established-at-ms: u64,
     }
 
+    /// Shape of the JSON object returned by `gossip-get-node-identity`.
+    /// Mirrors `NodeIdentityPublic` in src/types.rs.
+    record node-identity-public {
+        /// Node identifier (64-char hex).
+        node-id: string,
+        /// HybridPublicKey as JSON — X25519 and ML-KEM-768 components.
+        kem-public-key-json: string,
+        /// ML-DSA-65 public key as lowercase hex (1952 bytes = 3904 chars).
+        sig-public-key-hex: string,
+        /// Key epoch label.
+        key-epoch: string,
+    }
+
+    /// Shape of the JSON object returned by `gossip-get-session`.
+    record session-record {
+        /// Session ID (64-char hex), derived via HKDF-SHA256.
+        session-id: string,
+        /// Network address of the peer.
+        peer-addr: string,
+        /// Peer's node ID (64-char hex).
+        peer-node-id: string,
+        /// Unix timestamp (ms) when the session was established.
+        established-at-ms: u64,
+        /// Whether the session is still active.
+        is-active: bool,
+    }
+
     /// Shape of the JSON object returned by `gossip-get-stats`.
     record gossip-stats {
         /// Total messages published by this node.
