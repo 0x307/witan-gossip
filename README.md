@@ -26,8 +26,7 @@ runtimes in a larger validator-node architecture:
 - [`docs/crates.io/`](docs/crates.io/) — the public documentation set: an extended README, the
   architecture/layering rationale (`witan-gossip` vs. transport layers like QUIC/TCP/NATS), an
   integration guide, extension points, a competitive comparison, and the roadmap.
-- [`docs/proprietary-ip/`](docs/proprietary-ip/) — internal architecture, design, and rollout
-  planning documents. Not part of the public API surface or the published crate.
+
 
 ## Key responsibilities of the Gossip Protocol Runtime
 
