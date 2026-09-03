@@ -1,12 +1,22 @@
-//! # witan-gossip
+//! # witan
 //!
 //! Post-Quantum Cryptography Gossip Protocol WASM Component for the blockchain runtime.
 //!
 //! ## Architecture
 //!
-//! This crate implements a production-grade PQC gossip protocol as a WASM Component
-//! Model component. The blockchain host owns transport (QUIC/TCP/WebTransport).
-//! This component owns all cryptographic and protocol logic.
+//! This crate implements a PQC gossip protocol that is consumed in two ways:
+//!
+//! - As a **WASM Component Model component** (`wasm32-wasip2`), exporting the
+//!   `witan:gossip/gossip-world` world defined in `wit/gossip-protocol.wit`.
+//!   This is the default and recommended integration path.
+//! - As a **native Rust library** (`rlib`), calling [`api`] directly.
+//!
+//! A third, deprecated path exists behind the `wasi-abi` feature: a hand-rolled
+//! C-ABI over `wasm32-wasip1` core modules. It is retained for pre-existing
+//! consumers only and is scheduled for removal in a future release.
+//!
+//! In every case the blockchain host owns transport (QUIC/TCP/WebTransport) and
+//! this crate owns all cryptographic and protocol logic.
 //!
 //! ## Module Structure
 //!
@@ -22,7 +32,23 @@
 //! - [`session`] — SessionStore and session ID derivation
 //! - [`types`] — All domain types (GossipEnvelope, PayloadType, etc.)
 
-#[cfg(target_arch = "wasm32")]
+/// WASM Component Model export layer (`wasm32-wasip2`).
+///
+/// Behind the default-on `component` feature. Depending on this crate as a
+/// library from your own component? Disable it with `default-features = false`
+/// — an `export!`ed interface in a dependency is merged into the root crate's
+/// world, so leaving it on publishes `witan:gossip/gossip-protocol` as part of
+/// *your* component's surface.
+#[cfg(all(target_arch = "wasm32", feature = "component"))]
+pub mod component;
+
+/// Legacy hand-rolled C-ABI exports for `wasm32-wasip1` core-module hosts.
+///
+/// **Deprecated.** Superseded by the Component Model interface in
+/// [`component`], which requires no feature flag and no manual memory
+/// management. Enable with `--features wasi-abi` only if you integrated
+/// against the raw ptr/len ABI before the component export existed.
+#[cfg(all(target_arch = "wasm32", feature = "wasi-abi"))]
 pub mod wasi_exports;
 
 pub mod api;

@@ -1,7 +1,11 @@
 // wit/gossip-protocol.wit
 // Witan-Gossip Protocol — WASM Component Interface
 // Version: 0.1.0
-// World: witan:gossip/gossip-protocol
+// World: witan:gossip/gossip-world
+//
+// This interface is the source of truth for the component's exported API and is
+// generated into guest bindings by wit-bindgen (see src/component.rs). Every
+// function here corresponds 1:1 to a public function in src/api.rs.
 
 package witan:gossip@0.1.0;
 
@@ -14,6 +18,7 @@ interface gossip-protocol {
     // -------------------------------------------------------------------------
 
     /// All errors returned by the gossip component.
+    /// Mirrors `GossipError` in src/error.rs one-to-one.
     variant gossip-error {
         /// Component has not been initialized via gossip-init.
         not-initialized,
@@ -48,10 +53,15 @@ interface gossip-protocol {
     }
 
     // -------------------------------------------------------------------------
-    // Payload type enum
+    // Documentation-only shapes
+    //
+    // The functions below pass peers, stats, and identity as JSON strings, not
+    // as typed records. These declarations exist to document the shape of that
+    // JSON. They are deliberately not used in any signature — promoting them to
+    // real return types is a candidate for a future breaking release.
     // -------------------------------------------------------------------------
 
-    /// Discriminant for the gossip message payload.
+    /// Discriminant values accepted by the `payload-type-id: u8` parameters.
     enum payload-type {
         /// Blockchain transaction.
         transaction,
@@ -65,11 +75,7 @@ interface gossip-protocol {
         peer-discovery,
     }
 
-    // -------------------------------------------------------------------------
-    // Peer info record
-    // -------------------------------------------------------------------------
-
-    /// Public information about a connected peer.
+    /// Shape of each object in the JSON array returned by `gossip-get-peers`.
     record peer-info {
         /// Network address of the peer (e.g. "127.0.0.1:9000").
         addr: string,
@@ -81,11 +87,34 @@ interface gossip-protocol {
         established-at-ms: u64,
     }
 
-    // -------------------------------------------------------------------------
-    // Gossip stats record
-    // -------------------------------------------------------------------------
+    /// Shape of the JSON object returned by `gossip-get-node-identity`.
+    /// Mirrors `NodeIdentityPublic` in src/types.rs.
+    record node-identity-public {
+        /// Node identifier (64-char hex).
+        node-id: string,
+        /// HybridPublicKey as JSON — X25519 and ML-KEM-768 components.
+        kem-public-key-json: string,
+        /// ML-DSA-65 public key as lowercase hex (1952 bytes = 3904 chars).
+        sig-public-key-hex: string,
+        /// Key epoch label.
+        key-epoch: string,
+    }
 
-    /// Runtime statistics for the gossip component.
+    /// Shape of the JSON object returned by `gossip-get-session`.
+    record session-record {
+        /// Session ID (64-char hex), derived via HKDF-SHA256.
+        session-id: string,
+        /// Network address of the peer.
+        peer-addr: string,
+        /// Peer's node ID (64-char hex).
+        peer-node-id: string,
+        /// Unix timestamp (ms) when the session was established.
+        established-at-ms: u64,
+        /// Whether the session is still active.
+        is-active: bool,
+    }
+
+    /// Shape of the JSON object returned by `gossip-get-stats`.
     record gossip-stats {
         /// Total messages published by this node.
         messages-published: u64,
@@ -153,7 +182,7 @@ interface gossip-protocol {
     ///                    2=finality-vote, 3=state-sync, 4=peer-discovery)
     ///   payload: raw message bytes (max 1MB by default)
     ///
-    /// Returns: 32-byte message ID on success.
+    /// Returns: the 32-byte message ID on success.
     gossip-publish: func(
         payload-type-id: u8,
         payload: list<u8>,
@@ -165,22 +194,27 @@ interface gossip-protocol {
 
     /// Initiate a PQC handshake with a peer.
     ///
-    /// Generates the first handshake message (identity probe) and returns
-    /// it as bytes for the host to transmit. The host must call
+    /// Generates the first handshake message (identity probe) and returns it as
+    /// bytes for the host to transmit. The host must call
     /// gossip-process-handshake-bytes as responses arrive.
     ///
-    /// Returns: session-id hex string on successful handshake completion.
-    /// Note: In the synchronous model, this returns the probe bytes.
-    ///       The host drives the handshake exchange and calls back.
-    gossip-connect-peer: func(peer-addr: string) -> result<string, gossip-error>;
+    /// Returns: the bincode-encoded HandshakeProbe bytes to send.
+    gossip-connect-peer: func(peer-addr: string) -> result<list<u8>, gossip-error>;
 
     /// Disconnect from a peer and remove their session.
     gossip-disconnect-peer: func(peer-addr: string) -> result<_, gossip-error>;
 
     /// Get the list of currently connected peers as a JSON array.
     ///
-    /// Returns JSON: [{"addr":"...","node_id":"...","session_id":"...","established_at_ms":...}]
+    /// Returns a JSON array of `peer-info`-shaped objects.
     gossip-get-peers: func() -> result<string, gossip-error>;
+
+    /// Get session info for a specific peer as a JSON object.
+    ///
+    /// Returns JSON:
+    /// {"session_id":"...","peer_addr":"...","peer_node_id":"...",
+    ///  "established_at_ms":...,"is_active":true}
+    gossip-get-session: func(peer-addr: string) -> result<string, gossip-error>;
 
     // -------------------------------------------------------------------------
     // Identity
@@ -196,6 +230,14 @@ interface gossip-protocol {
     ///   "key_epoch": "ephemeral-runtime"
     /// }
     gossip-get-node-identity: func() -> result<string, gossip-error>;
+
+    /// Rotate node identity keys. Generates a fresh ephemeral identity.
+    ///
+    /// Existing sessions remain valid (they verify against the old keys);
+    /// new envelopes are signed with the new keys.
+    ///
+    /// Returns: the new node-id as a 64-char hex string.
+    gossip-rotate-keys: func() -> result<string, gossip-error>;
 
     // -------------------------------------------------------------------------
     // Envelope operations
@@ -234,7 +276,8 @@ interface gossip-protocol {
 
     /// Get runtime statistics as a JSON object.
     ///
-    /// Returns JSON matching the gossip-stats record fields.
+    /// Also triggers a heartbeat (dedup eviction, mesh maintenance).
+    /// Returns a JSON object matching the `gossip-stats` shape.
     gossip-get-stats: func() -> result<string, gossip-error>;
 
     // -------------------------------------------------------------------------
@@ -276,7 +319,7 @@ interface gossip-protocol {
     // -------------------------------------------------------------------------
 
     /// Get the current Unix timestamp in milliseconds.
-    /// (Provided by the component using WASI clock.)
+    /// (Provided by the component using the WASI wall clock.)
     gossip-now-ms: func() -> u64;
 
     /// Verify a standalone ML-DSA-65 signature.
@@ -288,6 +331,9 @@ interface gossip-protocol {
         signature: list<u8>,
         context: list<u8>,
     ) -> result<bool, gossip-error>;
+
+    /// Get the crate version string (CARGO_PKG_VERSION). Infallible.
+    gossip-get-version: func() -> string;
 }
 
 // -------------------------------------------------------------------------
@@ -297,17 +343,12 @@ interface gossip-protocol {
 /// The WASM component world for the Witan-Gossip gossip protocol.
 ///
 /// The component exports the gossip-protocol interface.
-/// The host provides WASI standard interfaces (clocks, random).
+///
+/// WASI imports (clocks, random, stdio) are not declared here: on
+/// wasm32-wasip2 the Rust standard library supplies them, and they appear in
+/// the emitted component's import list automatically. Inspect the real import
+/// set with `wasm-tools component wit` on the built artifact.
 world gossip-world {
     /// The gossip protocol API exported by the component.
     export gossip-protocol;
-
-    /// WASI monotonic clock (for timestamps).
-    import wasi:clocks/monotonic-clock@0.2.0;
-
-    /// WASI wall clock (for Unix timestamps).
-    import wasi:clocks/wall-clock@0.2.0;
-
-    /// WASI random (for nonce generation, key generation).
-    import wasi:random/random@0.2.0;
 }

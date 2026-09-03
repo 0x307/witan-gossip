@@ -1,11 +1,11 @@
-# witan-gossip
+# witan
 
 **The post-quantum-native gossip protocol engine for blockchains and mesh networks.**
 
-[![Crates.io](https://img.shields.io/crates/v/witan-gossip.svg)](https://crates.io/crates/witan-gossip)
-[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](https://github.com/Witan-Gossip/witan-gossip)
-[![Build Status](https://img.shields.io/github/actions/workflow/status/Witan-Gossip/witan-gossip/ci.yml?branch=main)](https://github.com/Witan-Gossip/witan-gossip/actions)
-[![WASM Component](https://img.shields.io/badge/target-wasm32--unknown--unknown-orange.svg)](https://webassembly.org/)
+[![Crates.io](https://img.shields.io/crates/v/witan.svg)](https://crates.io/crates/witan)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](https://github.com/0x307/witan-gossip)
+[![Build Status](https://img.shields.io/github/actions/workflow/status/0x307/witan-gossip/ci.yml?branch=main)](https://github.com/0x307/witan-gossip/actions)
+[![WASM Component](https://img.shields.io/badge/target-wasm32--wasip2-orange.svg)](https://webassembly.org/)
 [![FIPS 203](https://img.shields.io/badge/FIPS-203%20ML--KEM--768-green.svg)](https://csrc.nist.gov/pubs/fips/203/final)
 [![FIPS 204](https://img.shields.io/badge/FIPS-204%20ML--DSA--65-green.svg)](https://csrc.nist.gov/pubs/fips/204/final)
 
@@ -18,14 +18,14 @@ fan-out — secures the **pipe** (TLS/Noise), not the **message**. The instant a
 rebroadcast, or forwarded through a broker, that protection is gone: the next hop is a new session
 trusting whatever the previous hop handed it.
 
-`witan-gossip` signs the **envelope itself**. Every `GossipEnvelope` carries the sender's
+`witan` signs the **envelope itself**. Every `GossipEnvelope` carries the sender's
 post-quantum public key and an ML-DSA-65 signature over its own contents, so **any node, at any hop,
 through any transport — including an untrusted relay or a public broker — can independently verify
 who sent a message and when**, without re-establishing trust at every hop. Pair that with:
 
 - **Post-quantum by default, not bolted on** — ML-KEM-768 + X25519 hybrid KEM (FIPS 203) and
   ML-DSA-65 (FIPS 204) are the baseline, with no classical-only code path to accidentally ship.
-- **WASM Component Model portability** — one audited crypto core, embeddable in Rust, Go, Python,
+- **WASM Component Model portability** — one auditable crypto core, embeddable in Rust, Go, Python,
   or behind a gRPC boundary, with no per-language PQC re-implementation risk.
 - **A deliberately small, auditable core** — no sockets, no async runtime, no bundled transport
   stack inside the security-critical component.
@@ -41,20 +41,25 @@ split the way they are.
 
 ## Overview
 
-`witan-gossip` is a **production-grade, post-quantum cryptography (PQC) gossip protocol** implemented as a [WASM Component Model](https://component-model.bytecodealliance.org/) component for the **blockchain runtime**. It provides epidemic broadcast messaging with quantum-resistant cryptographic guarantees for validator-to-validator communication.
+`witan` is a **post-quantum cryptography (PQC) gossip protocol engine**, implemented as a [WASM Component Model](https://component-model.bytecodealliance.org/) component. It provides epidemic broadcast messaging with quantum-resistant cryptographic guarantees for validator-to-validator communication, and runs standalone — any host that can move bytes can drive it.
+
+> **Maturity:** this is a `0.x` release. The protocol and API work and are covered by tests and a
+> multi-node integration harness, but the cryptographic core has **not** had a third-party audit
+> (that's on the [roadmap](../docs/crates.io/roadmap.md)), and breaking changes are expected while
+> the version is below 1.0. Evaluate accordingly before putting it in front of value.
 
 ### What problem does it solve?
 
-Classical gossip protocols used in blockchain networks rely on ECDH/ECDSA key exchange and signatures, which are vulnerable to Harvest-Now-Decrypt-Later (HNDL) attacks by quantum adversaries. `witan-gossip` replaces these with:
+Classical gossip protocols used in blockchain networks rely on ECDH/ECDSA key exchange and signatures, which are vulnerable to Harvest-Now-Decrypt-Later (HNDL) attacks by quantum adversaries. `witan` replaces these with:
 
 - **ML-KEM-768 + X25519 hybrid KEM** (NIST FIPS 203) for session key establishment
 - **ML-DSA-65** (NIST FIPS 204) for message authentication and identity binding
 
-The component is compiled to `wasm32-unknown-unknown` and embedded in the blockchain host process. The **host owns transport** (QUIC/TCP/WebTransport, or a message broker such as NATS); the **component owns all cryptographic and protocol logic**. This separation means the PQC gossip layer can be upgraded independently of the transport layer.
+The component is compiled to `wasm32-wasip2` and embedded in the blockchain host process. The **host owns transport** (QUIC/TCP/WebTransport, or a message broker such as NATS); the **component owns all cryptographic and protocol logic**. This separation means the PQC gossip layer can be upgraded independently of the transport layer.
 
-### `witan-gossip` alone vs. a transport/messaging layer
+### `witan` alone vs. a transport/messaging layer
 
-| Capability | `witan-gossip` provides | A transport/messaging layer provides |
+| Capability | `witan` provides | A transport/messaging layer provides |
 |---|---|---|
 | Node identity, PQC handshake, session establishment | ✅ | — |
 | Envelope signing & verification (ML-DSA-65) | ✅ | — |
@@ -90,7 +95,7 @@ honest list of the risks this abstraction introduces.
 │                     │ WIT function calls           │ return bytes   │
 │                     ▼                              │                │
 │  ┌──────────────────────────────────────────────────────────────┐   │
-│  │              WASM Component (witan-gossip)                   │   │
+│  │              WASM Component (witan)                   │   │
 │  │                                                              │   │
 │  │  ┌─────────────┐  ┌──────────────┐  ┌──────────────────┐     │   │
 │  │  │  GossipAPI  │  │  Handshake   │  │  GossipEngine    │     │   │
@@ -261,7 +266,7 @@ Envelopes are rejected if `|now_ms - timestamp_unix_ms| > replay_window_ms` (def
 ### Minimal Rust usage (native)
 
 ```rust
-use witan_gossip::{
+use witan::{
     gossip_init, gossip_encode_envelope, gossip_verify_envelope,
     gossip_get_node_identity, gossip_publish, gossip_get_stats,
     types::PayloadType,
@@ -305,7 +310,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 ### Connecting to a peer
 
 ```rust
-use witan_gossip::{
+use witan::{
     gossip_init, gossip_connect_peer, gossip_process_handshake_bytes,
 };
 
@@ -331,7 +336,7 @@ fn connect_to_peer(peer_addr: &str, transport: &mut dyn Transport) {
 
 ## API Reference
 
-All public functions are re-exported from [`witan_gossip`](src/lib.rs) and correspond 1:1 to the WIT interface functions.
+All public functions are re-exported from [`witan`](src/lib.rs) and correspond 1:1 to the WIT interface functions.
 
 ---
 
@@ -977,7 +982,7 @@ Incoming bytes are classified by reading bytes `[8..]` (skipping the 8-byte binc
 
 ## WIT Interface
 
-The component is defined by the WIT world `witan:gossip/gossip-world@0.1.0` in [`pqc-gossip/wit/gossip-protocol.wit`](wit/gossip-protocol.wit).
+The component is defined by the WIT world `witan:gossip/gossip-world@0.1.0` in [`witan/wit/gossip-protocol.wit`](wit/gossip-protocol.wit).
 
 ### World Definition
 
@@ -986,17 +991,24 @@ package witan:gossip@0.1.0;
 
 world gossip-world {
     export gossip-protocol;
-
-    import wasi:clocks/monotonic-clock@0.2.0;
-    import wasi:clocks/wall-clock@0.2.0;
-    import wasi:random/random@0.2.0;
 }
 ```
 
-The component **exports** the `gossip-protocol` interface and **imports** three WASI standard interfaces:
-- `wasi:clocks/monotonic-clock` — for handshake timeout tracking
-- `wasi:clocks/wall-clock` — for Unix timestamps in envelopes
-- `wasi:random/random` — for nonce generation and key generation
+The component **exports** the `gossip-protocol` interface. Its WASI **imports**
+are not declared in the world: on `wasm32-wasip2` the Rust standard library
+supplies them and they appear in the emitted component automatically. The
+build depends on three of them —
+
+- `wasi:clocks/wall-clock` — Unix timestamps in envelopes
+- `wasi:clocks/monotonic-clock` — handshake timeout tracking
+- `wasi:random/random` — nonce and key generation
+
+— alongside the `wasi:cli`/`wasi:io` interfaces std pulls in. Read the real,
+current import set off the artifact rather than trusting this list:
+
+```bash
+wasm-tools component wit target/wasm32-wasip2/release/witan.wasm
+```
 
 ### Using with `cargo component`
 
@@ -1005,10 +1017,10 @@ The component **exports** the `gossip-protocol` interface and **imports** three 
 cargo install cargo-component
 
 # Build the WASM component
-cargo component build -p witan-gossip --release
+cargo component build -p witan --release
 
 # The component is at:
-# target/wasm32-unknown-unknown/release/witan_gossip.wasm
+# target/wasm32-wasip1/release/witan.wasm
 ```
 
 ### Using with `wasmtime` CLI
@@ -1016,7 +1028,7 @@ cargo component build -p witan-gossip --release
 ```bash
 # Run a WIT function directly (for testing)
 wasmtime run --wasm component-model \
-  target/wasm32-unknown-unknown/release/witan_gossip.wasm \
+  target/wasm32-wasip2/release/witan.wasm \
   --invoke gossip-now-ms
 ```
 
@@ -1026,10 +1038,12 @@ wasmtime run --wasm component-model \
 interface gossip-protocol {
     gossip-init: func(config-json: string) -> result<_, gossip-error>;
     gossip-publish: func(payload-type-id: u8, payload: list<u8>) -> result<list<u8>, gossip-error>;
-    gossip-connect-peer: func(peer-addr: string) -> result<string, gossip-error>;
+    gossip-connect-peer: func(peer-addr: string) -> result<list<u8>, gossip-error>;
     gossip-disconnect-peer: func(peer-addr: string) -> result<_, gossip-error>;
     gossip-get-peers: func() -> result<string, gossip-error>;
+    gossip-get-session: func(peer-addr: string) -> result<string, gossip-error>;
     gossip-get-node-identity: func() -> result<string, gossip-error>;
+    gossip-rotate-keys: func() -> result<string, gossip-error>;
     gossip-verify-envelope: func(envelope-bytes: list<u8>) -> result<bool, gossip-error>;
     gossip-encode-envelope: func(payload-type-id: u8, payload: list<u8>) -> result<list<u8>, gossip-error>;
     gossip-decode-envelope: func(bytes: list<u8>) -> result<string, gossip-error>;
@@ -1039,8 +1053,13 @@ interface gossip-protocol {
     gossip-build-finish-ack: func(peer-addr: string, finish-bytes: list<u8>) -> result<list<u8>, gossip-error>;
     gossip-now-ms: func() -> u64;
     gossip-verify-signature: func(public-key-bytes: list<u8>, message: list<u8>, signature: list<u8>, context: list<u8>) -> result<bool, gossip-error>;
+    gossip-get-version: func() -> string;
 }
 ```
+
+All 18 functions map 1:1 onto the public functions in
+[`src/api.rs`](src/api.rs) and are exported by the built component; verify with
+`wasm-tools component wit` rather than taking this listing on trust.
 
 ---
 
@@ -1048,30 +1067,36 @@ interface gossip-protocol {
 
 ### Prerequisites
 
-- **Rust** 1.75+ (2021 edition)
-- **`wasm32-unknown-unknown` target** for WASM builds
-- **`cargo-component`** for WASM Component Model builds
+- **Rust** 1.82+ (2021 edition; `wasm32-wasip2` requires 1.82)
+- **`wasm32-wasip2` target** for component builds
 
 ```bash
-# Install Rust target
-rustup target add wasm32-unknown-unknown
-
-# Install cargo-component
-cargo install cargo-component
+rustup target add wasm32-wasip2
 ```
+
+`cargo-component` is optional — needed only for the alternative build path below.
 
 ### Native Build
 
 ```bash
-cargo build -p witan-gossip
+cargo build -p witan
 ```
 
-### WASM Build (optimized for size)
+### WASM Component Build (optimized for size)
 
 ```bash
-cargo build -p witan-gossip \
-  --target wasm32-unknown-unknown \
+cargo build -p witan \
+  --target wasm32-wasip2 \
   --release
+```
+
+This emits a WASM Component directly at
+`target/wasm32-wasip2/release/witan.wasm` — no adapter or post-processing
+step. Confirm what you built:
+
+```bash
+wasm-tools component wit target/wasm32-wasip2/release/witan.wasm
+# world root { … export witan:gossip/gossip-protocol@0.1.0; }
 ```
 
 The release profile is configured for minimum WASM size:
@@ -1085,20 +1110,62 @@ panic = "abort"      # no unwinding in WASM
 strip = true         # strip debug symbols
 ```
 
-### WASM Component Build (with WIT bindings)
+### Alternative: `cargo component`
 
 ```bash
-cargo component build -p witan-gossip --release
-# Output: target/wasm32-unknown-unknown/release/witan_gossip.wasm
+cargo install cargo-component
+cargo component build -p witan --release
+# Output: target/wasm32-wasip1/release/witan.wasm
 ```
+
+This builds a `wasm32-wasip1` core module and componentizes it with an adapter.
+The result exports the same `witan:gossip/gossip-protocol@0.1.0` interface as the
+`wasm32-wasip2` build. Both paths are exercised in CI; pick whichever fits your
+toolchain. Note that `cargo component build` regenerates `src/bindings.rs`, which
+this crate does not use (guest bindings come from `wit_bindgen::generate!` in
+`src/component.rs`) and which is gitignored as a build artifact.
+
+### Unsupported targets
+
+`wasm32-unknown-unknown` is not supported. It provides no WASI wall clock, so
+rather than compiling and then panicking at runtime, the crate deliberately fails
+to build there.
 
 ### Feature Flags
 
-| Feature | Description |
-|---------|-------------|
-| `wasm` | Enable WASM-specific bindings (`js_sys::Date` for timestamps) |
-| `native-transport` | Enable native QUIC/TCP transport (Quinn, Rustls, Tokio) for integration tests |
-| `test-utils` | Enable test helper utilities |
+| Feature | Default | Description |
+|---------|---------|-------------|
+| `component` | **on** | Export the `witan:gossip/gossip-protocol` Component Model interface on wasm32 targets. Turn off when consuming this crate as a library from your own component — see below. |
+| `wasi-abi` | off | **Deprecated.** Legacy hand-rolled ptr/len C-ABI (`gossip_*_wasi`) for `wasm32-wasip1` core-module hosts, superseded by the component interface. Retained for pre-existing consumers and scheduled for removal. |
+| `native-transport` | off | Enable native QUIC/TCP transport (Quinn, Rustls, Tokio) for integration tests |
+
+### Depending on this crate from your own component
+
+An `export!`ed interface in a *dependency* is merged into the **root** crate's
+world. So if you depend on `witan` from your own wasm component and leave
+the default features on, your component's public surface gains
+`witan:gossip/gossip-protocol` alongside your own exports, whether or not you
+meant to expose it:
+
+```
+world root {
+  export example:validator/validator@0.1.0;   # yours
+  export witan:gossip/gossip-protocol@0.1.0;  # inherited from the dependency
+}
+```
+
+Opt out to get the plain library:
+
+```toml
+[dependencies]
+witan = { version = "0.1", default-features = false }
+```
+
+You still call the full API through [`witan::*`](src/api.rs); you simply
+don't re-export the interface. Leave the feature on when you are building
+`witan` *itself* as a standalone component, which is why it is default-on:
+the opposite default fails silently, producing a component with no gossip export
+that only breaks when a host tries to instantiate it.
 
 ---
 
@@ -1120,7 +1187,7 @@ fn main() -> anyhow::Result<()> {
     // Load the compiled WASM component
     let component = Component::from_file(
         &engine,
-        "target/wasm32-unknown-unknown/release/witan_gossip.wasm",
+        "target/wasm32-wasip2/release/witan.wasm",
     )?;
 
     // Set up WASI context (provides clocks and random)
@@ -1239,18 +1306,26 @@ fn handle_received_envelope(bytes: &[u8]) -> bool {
 
 ---
 
-## ABI Bindings
+## Language Bindings
 
-Language bindings for the WIT interface are planned in `pqc-gossip/abi/`:
+| Language | How | Status |
+|----------|-----|--------|
+| **Rust (native)** | Direct crate dependency (`rlib`) | ✅ Available |
+| **Rust (component host)** | `wasmtime::component::bindgen!` against `wit/gossip-protocol.wit` | ✅ Available — see [`wasmtime-test/`](../wasmtime-test/) |
+| **Go** | `wit-bindgen-go generate --world gossip-world witan/wit` | ✅ Supported via generation; no first-party example yet |
+| **Python** | `componentize-py --wit-path witan/wit --world gossip-world` | ✅ Supported via generation; no first-party example yet |
+| **gRPC/Protobuf** | Generate a service contract from the WIT, front the component with a server | 🔜 No first-party proto ships today |
 
-| Language | Binding Type | Status |
-|----------|-------------|--------|
-| **Rust** | Native `rlib` (direct crate dependency) | ✅ Available |
-| **Go** | `wit-bindgen-go` generated bindings | 🔜 Planned |
-| **Python** | `componentize-py` bindings | 🔜 Planned |
-| **gRPC/Protobuf** | Host-side gRPC proxy over WASM | 🔜 Planned |
+The WIT interface is the contract; bindings are generated from it rather than hand-written. That is
+a deliberate choice: an earlier revision of this repo shipped hand-written Go/Python/Rust bindings
+that had drifted from the interface — wrong symbol names, wrong target, a calling convention the
+crate never used — while still reading like working code. They have been removed. A binding that has
+silently drifted from a cryptographic interface is worse than no binding at all.
 
-For Rust hosts, use the crate directly as an `rlib` dependency. For other languages, embed the WASM component in a Wasmtime host and use the generated WIT bindings.
+The [`wasmtime-test/`](../wasmtime-test/) harness is a working multi-node example of the generated
+approach: it drives three in-process component instances through a full PQC handshake and gossip
+exchange, and its host bindings come from the same WIT the guest is built from, so the two cannot
+drift apart.
 
 ---
 
@@ -1260,18 +1335,18 @@ For Rust hosts, use the crate directly as an `rlib` dependency. For other langua
 
 ```bash
 # Run all 10 integration tests
-cargo test -p witan-gossip
+cargo test -p witan
 
 # Run with output
-cargo test -p witan-gossip -- --nocapture
+cargo test -p witan -- --nocapture
 
 # Run a specific test
-cargo test -p witan-gossip test_handshake_full_roundtrip -- --nocapture
+cargo test -p witan test_handshake_full_roundtrip -- --nocapture
 ```
 
 ### Test Suite
 
-The integration tests in [`pqc-gossip/tests/integration_tests.rs`](tests/integration_tests.rs) cover:
+The integration tests in [`witan/tests/integration_tests.rs`](tests/integration_tests.rs) cover:
 
 | # | Test Name | What It Tests |
 |---|-----------|---------------|
@@ -1296,7 +1371,7 @@ The integration tests in [`pqc-gossip/tests/integration_tests.rs`](tests/integra
 
 ### Threat Model
 
-`witan-gossip` is designed to protect against:
+`witan` is designed to protect against:
 
 | Threat | Mitigation |
 |--------|-----------|
@@ -1358,15 +1433,20 @@ BFT quorum (`≥ 2/3` by default) ensures that a message is considered confirmed
 
 ### Expected Latency
 
-| Operation | Typical Latency |
-|-----------|----------------|
-| `gossip_init` (key generation) | 50–200 ms (ML-KEM + ML-DSA keygen) |
-| `gossip_encode_envelope` (sign) | 5–15 ms (ML-DSA-65 sign) |
-| `gossip_verify_envelope` (verify) | 3–10 ms (ML-DSA-65 verify) |
-| Full 4-message handshake (local) | 20–80 ms (2× KEM + 2× DSA ops) |
+| Operation | Measured (native) |
+|-----------|-------------------|
+| `gossip_init` (key generation) | ~2.5 ms (ML-KEM + ML-DSA keygen) |
+| `gossip_encode_envelope` (sign) | ~0.5 ms (ML-DSA-65 sign) |
+| `gossip_verify_envelope` (verify) | ~0.2 ms (ML-DSA-65 verify) |
 | `gossip_publish` (dedup check) | < 1 ms |
 
-> **Note:** Latency depends heavily on the target platform. WASM execution adds ~1.5–3× overhead compared to native. ML-KEM and ML-DSA operations are the dominant cost.
+> **How these were obtained:** measured on one x86-64 development machine, release profile,
+> 256-byte payload, best of 20 iterations after warm-up. They are indicative, not a benchmark suite
+> — run your own on your target hardware before sizing anything that matters. Earlier revisions of
+> this table carried estimates that overstated latency by 10–50×; these numbers replace them.
+>
+> Expect WASM execution to add roughly 1.5–3× over native. ML-KEM and ML-DSA operations dominate;
+> everything else in the path is hashing and serialization.
 
 ### Convergence Time
 
@@ -1381,7 +1461,7 @@ For N=1000 validators: log_8(1000) ≈ 3.3 rounds ≈ 2.3 seconds
 
 ## Where This Fits, What's Next
 
-`witan-gossip` alone gives every gossiped message a self-authenticating, post-quantum identity that
+`witan` alone gives every gossiped message a self-authenticating, post-quantum identity that
 survives relaying through any transport. It is not a transport, a broker, or a consensus engine —
 see [`docs/crates.io/architecture.md`](../docs/crates.io/architecture.md) for exactly how the
 crypto/protocol core and your transport layer (QUIC, TCP, WebTransport, or a broker such as NATS)
@@ -1421,12 +1501,12 @@ Unless you explicitly state otherwise, any contribution intentionally submitted 
 
 | Field | Value |
 |-------|-------|
-| Crate name | `witan-gossip` |
-| Library name | `witan_gossip` |
+| Crate name | `witan` |
+| Library name | `witan` |
 | Version | `0.1.0` |
 | Edition | Rust 2021 |
 | License | `Apache-2.0 OR MIT` |
-| Repository | https://github.com/Witan-Gossip/witan-gossip |
+| Repository | https://github.com/0x307/witan-gossip |
 | WIT package | `witan:gossip@0.1.0` |
 | Crate types | `cdylib` (WASM component), `rlib` (native library) |
-| WASM target | `wasm32-unknown-unknown` |
+| WASM target | `wasm32-wasip2` (component); `wasm32-wasip1` + `wasi-abi` feature (deprecated C-ABI) |

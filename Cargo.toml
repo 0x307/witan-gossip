@@ -1,6 +1,25 @@
 [workspace]
 members = [
-    "pqc-gossip",     # WASM component crate (witan-gossip)
+    "witan",     # WASM component crate (witan)
     "wasmtime-test",  # multi-instance wasmtime test harness
 ]
 resolver = "2"
+
+# ---------------------------------------------------------------------------
+# Build profiles
+#
+# These must live at the workspace root: cargo ignores `[profile.*]` declared
+# in a member package and warns about it, which is what happened while these
+# settings sat in witan/Cargo.toml — the size options below were being
+# documented but not applied.
+# ---------------------------------------------------------------------------
+[profile.release]
+opt-level = "z"         # optimize for size
+lto = true              # link-time optimization
+codegen-units = 1       # single codegen unit for better LTO
+panic = "abort"         # no unwinding in WASM
+strip = true            # strip debug symbols
+
+[profile.dev]
+opt-level = 0
+debug = true

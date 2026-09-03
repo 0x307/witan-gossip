@@ -1,6 +1,6 @@
 # Architecture: Why the Layers Are Split This Way
 
-This document explains the design boundary between `witan-gossip` (the crypto + protocol engine)
+This document explains the design boundary between `witan` (the crypto + protocol engine)
 and everything that moves bytes around it (QUIC, TCP, WebTransport, a message broker like NATS via
 a companion crate such as `erend-nats`, or your own custom transport). It also gives an honest
 account of the risks that this abstraction introduces, because no architectural choice is free.
@@ -22,7 +22,7 @@ account of the risks that this abstraction introduces, because no architectural 
 │                     │ WIT / ABI function calls       │ return bytes    │
 │                     ▼                                │                 │
 │  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │              witan-gossip (WASM component)                      │   │
+│  │              witan (WASM component)                      │   │
 │  │                                                                 │   │
 │  │   NodeIdentity → PQC Handshake → GossipEngine                   │   │
 │  │   (KEM+SIG keys)  (4-message)     (dedup, quorum, TTL, replay)  │   │
@@ -31,13 +31,13 @@ account of the risks that this abstraction introduces, because no architectural 
 ```
 
 The component exports a small set of pure functions (see the
-[WIT interface](../../pqc-gossip/wit/gossip-protocol.wit)): given bytes in, it returns bytes out, or
+[WIT interface](../../witan/wit/gossip-protocol.wit)): given bytes in, it returns bytes out, or
 a verdict (`valid` / `GossipError`). It never opens a socket, never spawns a task, never blocks on
 I/O. Every side effect that touches the network happens in the host.
 
 ---
 
-## 2. What `witan-gossip` provides, alone
+## 2. What `witan` provides, alone
 
 - **Node identity** — ML-KEM-768 + X25519 hybrid keypair, ML-DSA-65 keypair, deterministic (from
   supplied seeds) or ephemeral.
@@ -63,7 +63,7 @@ it's also what makes the core small enough to audit properly.
 
 ## 3. What a transport / messaging layer provides
 
-`witan-gossip` assumes something else is responsible for:
+`witan` assumes something else is responsible for:
 
 - **Physical connectivity** — opening sockets, TLS/QUIC handshakes at the transport level, keep-alives.
 - **Address resolution and connection lifecycle** — knowing which peers exist, connecting, retrying, reconnecting.
@@ -74,9 +74,9 @@ it's also what makes the core small enough to audit properly.
   list and send N times; a pub/sub broker (NATS Core, or JetStream for durable subjects) can fan a
   single publish out to every subscriber.
 - **Congestion control, retransmission, flow control, NAT traversal** — transport-layer concerns
-  that `witan-gossip` has no visibility into and does not need to.
+  that `witan` has no visibility into and does not need to.
 - **Durable persistence and replay** — if a validator is offline for a period, something needs to
-  hand it the messages it missed. `witan-gossip`'s dedup cache has a short TTL (default 60s) by
+  hand it the messages it missed. `witan`'s dedup cache has a short TTL (default 60s) by
   design; it is not a replay log. A durable stream (e.g., JetStream-style retention) is the natural
   place to solve this.
 
@@ -84,10 +84,18 @@ it's also what makes the core small enough to audit properly.
 
 ## 4. Why abstract the layers this way?
 
-1. **The WASM sandbox has no sockets, by design.** `wasm32-unknown-unknown` components cannot open
-   network connections. This isn't a limitation we worked around — it's a security property we
-   deliberately kept. The crypto core simply *cannot* leak key material onto the network by
-   accident, because it has no code path capable of doing so.
+1. **The component imports no network capability, and you can check that yourself.** Under the
+   Component Model a module can only do what its imports allow, and WASI *does* offer sockets
+   (`wasi:sockets`) — we simply never import them. The built component declares 17 imports: clocks,
+   random, and stdio. None of them can open a connection. So the crypto core cannot leak key
+   material onto the network by accident, because it holds no capability to do so:
+
+   ```bash
+   wasm-tools component wit target/wasm32-wasip2/release/witan.wasm | grep import
+   ```
+
+   That is a stronger guarantee than "the sandbox forbids it," because it is a property of this
+   artifact that you can verify in one command rather than a property you have to take on trust.
 
 2. **A small core is an auditable core.** There is no TLS stack, no async runtime, no libp2p, no
    socket code inside the component that handles your private keys. Every dependency in the crypto
@@ -100,10 +108,11 @@ it's also what makes the core small enough to audit properly.
    a browser, or a message broker such as NATS/JetStream via a companion crate. You are never locked
    into a specific transport choice by the cryptography.
 
-4. **One engine, any host language.** The WIT world and the accompanying wasm-bindgen-style ABI
-   (see [`pqc-gossip/abi/`](../../pqc-gossip/abi/)) mean the same binary can be embedded from Rust,
-   Go, Python, or fronted by a gRPC service — without re-implementing ML-KEM-768/ML-DSA-65 in each
-   language, which is exactly the kind of place cryptography implementations go wrong.
+4. **One engine, any host language.** The WIT world means the same binary can be embedded from any
+   host with Component Model tooling — Rust via `wasmtime::component`, Go via `wit-bindgen-go`,
+   Python via `componentize-py` — with bindings *generated from the interface* rather than
+   hand-written per language. No re-implementation of ML-KEM-768/ML-DSA-65 anywhere, which is
+   exactly the kind of place cryptography implementations go wrong.
 
 5. **Independent upgrade cadence.** Transport concerns (new QUIC versions, new broker features,
    congestion control tuning) evolve on a completely different timeline than cryptographic
@@ -121,12 +130,12 @@ This separation is a deliberate trade-off, not a free lunch. Be aware of the fol
 |---|---|---|
 | **Host must correctly wire the handshake and verification calls** | The component doesn't enforce call order — a host that skips `gossip_verify_envelope` and processes payload bytes directly bypasses all cryptographic protection | Always verify before trusting: treat `gossip_verify_envelope`/handshake results as your only source of truth about a message's authenticity |
 | **No native persistence or replay** | The dedup cache is short-TTL and in-memory; it is not a message log | Pair with a durable transport/broker for high-value payload types (e.g., block proposals, finality votes) if your mesh needs replay for nodes that rejoin after downtime |
-| **Delivery guarantees are transport-defined, not protocol-defined** | `witan-gossip` doesn't know if the underlying transport is at-most-once or at-least-once | Understand your transport's delivery semantics; the dedup cache protects you from *duplicate processing*, not from *message loss* |
+| **Delivery guarantees are transport-defined, not protocol-defined** | `witan` doesn't know if the underlying transport is at-most-once or at-least-once | Understand your transport's delivery semantics; the dedup cache protects you from *duplicate processing*, not from *message loss* |
 | **Call-boundary overhead** | Every host↔component interaction marshals bytes across the WASM boundary (WIT bindings or ABI pointer/length pairs) | For most gossip payload sizes and PQC operation costs (ML-DSA-65 sign/verify dominate at single-digit milliseconds) this overhead is negligible, but it is not zero — batch where it makes sense |
 | **Version skew across a mesh** | The wire format (bincode field order) and the WIT interface are versioned; a host running a newer/older component than its peers can misinterpret bytes | Treat the WIT package version and `gossip_get_version()` output as a compatibility contract; roll out upgrades in a coordinated fashion across the mesh, the same way you would any consensus-relevant software upgrade |
-| **The host owns the peer/mesh topology decisions** | `witan-gossip` tracks *sessions* it has been told about, but fan-out/mesh-membership logic (who to send to) lives in the host | A naive host implementation can under- or over-fan-out; use the `mesh_n` / `mesh_n_low` / `mesh_n_high` config as guidance, and let your transport's native fan-out (e.g., a broker's subject subscribers) do the heavy lifting where available |
+| **The host owns the peer/mesh topology decisions** | `witan` tracks *sessions* it has been told about, but fan-out/mesh-membership logic (who to send to) lives in the host | A naive host implementation can under- or over-fan-out; use the `mesh_n` / `mesh_n_low` / `mesh_n_high` config as guidance, and let your transport's native fan-out (e.g., a broker's subject subscribers) do the heavy lifting where available |
 
-The short version: `witan-gossip` guarantees that **if a byte sequence verifies, it is authentic,
+The short version: `witan` guarantees that **if a byte sequence verifies, it is authentic,
 fresh, and not a duplicate**. It cannot guarantee that a byte sequence you never gave it — because
 your transport dropped it, or your host skipped a verification call — ever arrives or gets checked.
 That responsibility is, deliberately, yours.
@@ -136,7 +145,7 @@ That responsibility is, deliberately, yours.
 ## 6. Pairing with NATS (or `erend-nats`) as a worked example
 
 A message broker like NATS is a natural transport partner because it already solves fan-out,
-subject-based routing, and (via JetStream) durable replay — the exact things `witan-gossip`
+subject-based routing, and (via JetStream) durable replay — the exact things `witan`
 deliberately leaves out. A typical wiring:
 
 ```
@@ -149,10 +158,10 @@ gossip_encode_envelope(payload_type, payload)   →  envelope_bytes
 gossip_verify_envelope(envelope_bytes)          →  true / GossipError
 ```
 
-NATS gives you the "send this to everyone subscribed to `transactions`" behavior; `witan-gossip`
+NATS gives you the "send this to everyone subscribed to `transactions`" behavior; `witan`
 gives you the guarantee that whatever comes out of that subscription is provably from the node it
 claims to be from, was signed with a post-quantum-secure key, and hasn't been replayed. Swap NATS for
-raw QUIC, TCP, or WebTransport and the two calls to `witan-gossip` don't change at all — only the
+raw QUIC, TCP, or WebTransport and the two calls to `witan` don't change at all — only the
 host's transport code does.
 
 See [`integration-guide.md`](integration-guide.md) for fuller worked examples.

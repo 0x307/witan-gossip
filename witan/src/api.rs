@@ -37,21 +37,18 @@ where
 
 /// Get current Unix timestamp in milliseconds.
 ///
-/// On WASM: uses `js_sys::Date::now()` (when `wasm` feature enabled).
-/// On native: uses `std::time::SystemTime`.
+/// Uses `std::time::SystemTime` on every supported target. On `wasm32-wasip1`
+/// and `wasm32-wasip2` the standard library backs this with the WASI wall
+/// clock, so no target-specific branch is needed.
+///
+/// Note: `wasm32-unknown-unknown` is not a supported target — it has no WASI
+/// clock, and `SystemTime::now()` would panic there at runtime.
 pub fn current_time_unix_ms() -> u64 {
-    #[cfg(all(target_arch = "wasm32", feature = "wasm"))]
-    {
-        js_sys::Date::now() as u64
-    }
-    #[cfg(not(all(target_arch = "wasm32", feature = "wasm")))]
-    {
-        use std::time::{SystemTime, UNIX_EPOCH};
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_millis() as u64)
-            .unwrap_or(0)
-    }
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────

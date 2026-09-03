@@ -1,11 +1,11 @@
-//! Integration tests for witan-gossip.
+//! Integration tests for witan.
 //!
 //! Tests cover: identity generation, signing, envelope encode/decode,
 //! replay detection, dedup cache, quorum tracker, handshake, API, and config.
 
 use std::sync::Once;
 
-use witan_gossip::{
+use witan::{
     gossip_decode_envelope, gossip_encode_envelope, gossip_get_node_identity, gossip_get_stats,
     gossip_get_version, gossip_init, gossip_publish, gossip_verify_envelope,
     identity::NodeIdentity,
@@ -158,7 +158,7 @@ fn test_envelope_roundtrip() {
 
 #[test]
 fn test_envelope_replay_detection() {
-    use witan_gossip::{
+    use witan::{
         config::GossipConfig,
         envelope::{build_envelope, encode_envelope},
         types::PayloadType,
@@ -185,7 +185,7 @@ fn test_envelope_replay_detection() {
     .expect("resolve failed");
 
     // Create envelope with timestamp 60 seconds in the past
-    let now_ms = witan_gossip::current_time_unix_ms();
+    let now_ms = witan::current_time_unix_ms();
     let old_timestamp_ms = now_ms.saturating_sub(60_000); // 60s ago — outside 30s window
 
     let envelope = build_envelope(
@@ -200,14 +200,14 @@ fn test_envelope_replay_detection() {
     let bytes = encode_envelope(&envelope).expect("encode_envelope failed");
 
     // verify_envelope should return ReplayDetected error
-    use witan_gossip::envelope::verify_envelope;
+    use witan::envelope::verify_envelope;
     let result = verify_envelope(&envelope, &config, now_ms);
     assert!(
         result.is_err(),
         "stale envelope must fail verification"
     );
     match result.unwrap_err() {
-        witan_gossip::GossipError::ReplayDetected => {}
+        witan::GossipError::ReplayDetected => {}
         e => panic!("expected ReplayDetected, got: {e:?}"),
     }
 
@@ -221,7 +221,7 @@ fn test_envelope_replay_detection() {
 
 #[test]
 fn test_dedup_cache() {
-    use witan_gossip::dedup::DedupCache;
+    use witan::dedup::DedupCache;
 
     // Create cache with 1-second TTL
     let mut cache = DedupCache::new(1);
@@ -259,7 +259,7 @@ fn test_dedup_cache() {
 
 #[test]
 fn test_quorum_tracker() {
-    use witan_gossip::quorum::QuorumTracker;
+    use witan::quorum::QuorumTracker;
 
     // 0.67 * 4 = 2.68 → ceil = 3 required
     let mut tracker = QuorumTracker::new(0.67);
@@ -302,7 +302,7 @@ fn test_quorum_tracker() {
 
 #[test]
 fn test_handshake_full_roundtrip() {
-    use witan_gossip::{handshake::HandshakeManager, identity::NodeIdentity};
+    use witan::{handshake::HandshakeManager, identity::NodeIdentity};
 
     // Create two node identities
     let alice = NodeIdentity::generate("test").expect("alice generate failed");
@@ -311,7 +311,7 @@ fn test_handshake_full_roundtrip() {
     let mut alice_hs = HandshakeManager::new();
     let mut bob_hs = HandshakeManager::new();
 
-    let now_ms = witan_gossip::current_time_unix_ms();
+    let now_ms = witan::current_time_unix_ms();
 
     // Step 1: Alice creates identity probe
     let probe = alice_hs
@@ -411,7 +411,7 @@ fn test_full_api_integration() {
 
 #[test]
 fn test_config_parsing() {
-    use witan_gossip::config::GossipConfig;
+    use witan::config::GossipConfig;
 
     // Parse minimal config: {} — all defaults
     let minimal = GossipConfig::from_json("{}").expect("minimal config parse failed");
