@@ -1,0 +1,43 @@
+[package]
+name = "witan-gossip-abi"
+version = "0.1.0"
+edition = "2021"
+description = "Rust host bindings for the witan-gossip WASM component"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/witan-gossip/witan-gossip"
+keywords = ["wasm", "gossip", "pqc", "blockchain", "wasmtime"]
+categories = ["wasm", "cryptography"]
+
+[lib]
+name = "witan_gossip_abi"
+path = "mod.rs"
+
+[[example]]
+name = "gossip_example"
+path = "example.rs"
+
+[dependencies]
+# wasmtime runtime for loading and executing WASM modules
+wasmtime = { version = "25.0", default-features = false, features = [
+    "cranelift",
+    "runtime",
+] }
+
+# Optional: for hex encoding in examples
+hex = { version = "0.4", optional = true }
+
+# Optional: for JSON parsing in examples
+serde_json = { version = "1.0", optional = true }
+
+[dev-dependencies]
+hex = "0.4"
+serde_json = "1.0"
+
+[features]
+default = []
+examples = ["hex", "serde_json"]
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1

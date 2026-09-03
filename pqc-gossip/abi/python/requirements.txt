@@ -1,0 +1,6 @@
+# witan-gossip Python bindings dependencies
+# Install with: pip install -r requirements.txt
+
+# wasmtime Python bindings — loads and executes WASM modules
+# https://github.com/bytecodealliance/wasmtime-py
+wasmtime>=25.0.0

@@ -1,0 +1,138 @@
+[package]
+name = "witan-gossip"
+version = "0.1.0"
+edition = "2021"
+description = "Post-quantum cryptography gossip protocol WASM component (white-label gossip runtime)"
+license = "Apache-2.0 OR MIT"
+repository = "https://github.com/witan-gossip/witan-gossip"
+readme = "README.md"
+authors = ["Witan-Gossip Contributors"]
+
+# cargo-component metadata: declares the WIT package identity
+[package.metadata.component]
+package = "witan:gossip"
+
+# No WIT component dependencies — pqc-kem and pqc-sig are Rust rlib deps
+[package.metadata.component.dependencies]
+
+# ---------------------------------------------------------------------------
+# Library target
+# ---------------------------------------------------------------------------
+[lib]
+name = "witan_gossip"
+crate-type = ["cdylib", "rlib"]
+
+# ---------------------------------------------------------------------------
+# Core dependencies (compile for both WASM and native)
+# ---------------------------------------------------------------------------
+[dependencies]
+
+# PQC KEM: X25519 + ML-KEM-768 hybrid (published crate; default features enable std)
+pqc-kem = { version = "0.2" }
+
+# PQC SIG: ML-DSA-65 (FIPS 204) (published crate; default features enable std)
+pqc-sig = { version = "0.3" }
+
+# Wire serialization (GossipEnvelope, handshake messages)
+bincode = "1.3.3"
+
+# Config and API response serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# SHA-256 for message IDs, node IDs, transcript hashes
+sha2 = { version = "0.10", default-features = false, features = ["oid"] }
+
+# HKDF for session ID derivation
+hkdf = "0.12"
+
+# HMAC for server MAC in handshake finish ACK
+hmac = "0.12"
+
+# Hex encoding for node IDs, session IDs, public keys in JSON
+hex = "0.4"
+
+# Random number generation (nonces, key generation)
+rand = { version = "0.8", default-features = false, features = ["getrandom"] }
+
+# ---------------------------------------------------------------------------
+# Target-specific getrandom: js feature for browser WASM, none for WASI/native
+# ---------------------------------------------------------------------------
+
+# Browser/Node.js WASM (wasm32 but NOT wasi): needs "js" feature for entropy
+[target.'cfg(all(target_arch = "wasm32", not(target_os = "wasi")))'.dependencies]
+getrandom = { version = "0.2", features = ["js"] }
+
+# WASI target: getrandom uses WASI random_get syscall automatically
+[target.'cfg(target_os = "wasi")'.dependencies]
+getrandom = { version = "0.2" }
+
+# ---------------------------------------------------------------------------
+# WASM-only dependencies
+# ---------------------------------------------------------------------------
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+
+# WASI bindings for clocks and random (provided by cargo-component / wit-bindgen)
+# These are imported via the WIT world definition, not as direct crate deps.
+# wit-bindgen generates the glue code automatically.
+
+# ---------------------------------------------------------------------------
+# Native-only dependencies (integration tests, benchmarks)
+# ---------------------------------------------------------------------------
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+
+# getrandom uses OS entropy automatically on native
+getrandom = { version = "0.2" }
+
+# QUIC transport for native integration tests
+quinn = { version = "0.11", optional = true }
+
+# TLS for QUIC (native only)
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"], optional = true }
+
+# Self-signed cert generation for test QUIC endpoints
+rcgen = { version = "0.14", optional = true }
+
+# Async runtime for native integration tests
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "io-util", "net"], optional = true }
+
+# ---------------------------------------------------------------------------
+# Dev dependencies (tests only, native)
+# ---------------------------------------------------------------------------
+[dev-dependencies]
+
+# Property-based testing
+proptest = "1.4"
+
+# ---------------------------------------------------------------------------
+# Features
+# ---------------------------------------------------------------------------
+[features]
+default = []
+
+# Enable WASM-specific bindings (js_sys::Date for timestamps)
+wasm = []
+
+# Enable WASI target exports (wasm32-wasip1)
+wasi = []
+
+# Enable native QUIC/TCP transport for integration tests
+native-transport = ["dep:quinn", "dep:rustls", "dep:rcgen", "dep:tokio"]
+
+# Enable test helper utilities
+test-utils = []
+
+# ---------------------------------------------------------------------------
+# Build profile: WASM release (optimize for size)
+# ---------------------------------------------------------------------------
+[profile.release]
+opt-level = "z"         # optimize for size
+lto = true              # link-time optimization
+codegen-units = 1       # single codegen unit for better LTO
+panic = "abort"         # no unwinding in WASM
+strip = true            # strip debug symbols
+
+# Development profile (fast compile, debug info)
+[profile.dev]
+opt-level = 0
+debug = true

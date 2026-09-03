@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "pqc-gossip",     # WASM component crate (witan-gossip)
+    "wasmtime-test",  # multi-instance wasmtime test harness
+]
+resolver = "2"

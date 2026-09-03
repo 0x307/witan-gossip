@@ -1,0 +1,313 @@
+// wit/gossip-protocol.wit
+// Witan-Gossip Protocol — WASM Component Interface
+// Version: 0.1.0
+// World: witan:gossip/gossip-protocol
+
+package witan:gossip@0.1.0;
+
+/// Core gossip protocol interface.
+/// The blockchain host calls these functions to drive the gossip component.
+interface gossip-protocol {
+
+    // -------------------------------------------------------------------------
+    // Error type
+    // -------------------------------------------------------------------------
+
+    /// All errors returned by the gossip component.
+    variant gossip-error {
+        /// Component has not been initialized via gossip-init.
+        not-initialized,
+        /// Component was already initialized.
+        already-initialized,
+        /// Configuration JSON was invalid or missing required fields.
+        config-error(string),
+        /// Node identity generation or key derivation failed.
+        identity-error(string),
+        /// PQC handshake protocol error.
+        handshake-error(string),
+        /// No active session found for the given peer address.
+        session-not-found(string),
+        /// Envelope encoding, decoding, or field validation failed.
+        envelope-error(string),
+        /// ML-DSA-65 signature verification failed.
+        signature-invalid,
+        /// Message timestamp is outside the +-30s replay window.
+        replay-detected,
+        /// Message TTL hop count reached zero.
+        ttl-expired,
+        /// Peer address not found in the active peer set.
+        peer-not-found(string),
+        /// BFT quorum threshold not yet reached.
+        quorum-not-reached,
+        /// Bincode or JSON serialization/deserialization error.
+        serialization-error(string),
+        /// PQC cryptographic operation failed.
+        crypto-error(string),
+        /// Invalid input parameter.
+        invalid-input(string),
+    }
+
+    // -------------------------------------------------------------------------
+    // Payload type enum
+    // -------------------------------------------------------------------------
+
+    /// Discriminant for the gossip message payload.
+    enum payload-type {
+        /// Blockchain transaction.
+        transaction,
+        /// Block proposal from a validator.
+        block-proposal,
+        /// Finality vote from a validator.
+        finality-vote,
+        /// State synchronization data.
+        state-sync,
+        /// Peer discovery advertisement.
+        peer-discovery,
+    }
+
+    // -------------------------------------------------------------------------
+    // Peer info record
+    // -------------------------------------------------------------------------
+
+    /// Public information about a connected peer.
+    record peer-info {
+        /// Network address of the peer (e.g. "127.0.0.1:9000").
+        addr: string,
+        /// Peer's node ID (SHA-256 of their KEM+SIG public keys, hex).
+        node-id: string,
+        /// Active session ID for this peer connection (hex).
+        session-id: string,
+        /// Unix timestamp (ms) when the session was established.
+        established-at-ms: u64,
+    }
+
+    // -------------------------------------------------------------------------
+    // Gossip stats record
+    // -------------------------------------------------------------------------
+
+    /// Runtime statistics for the gossip component.
+    record gossip-stats {
+        /// Total messages published by this node.
+        messages-published: u64,
+        /// Total messages received from peers.
+        messages-received: u64,
+        /// Total messages deduplicated (already seen).
+        messages-deduplicated: u64,
+        /// Total messages dropped (TTL expired, replay, invalid sig).
+        messages-dropped: u64,
+        /// Number of currently active peer sessions.
+        active-peers: u32,
+        /// Number of peers in the gossip mesh.
+        mesh-peers: u32,
+        /// Number of messages currently in the dedup cache.
+        dedup-cache-size: u32,
+        /// Number of completed PQC handshakes since init.
+        handshakes-completed: u32,
+        /// Number of failed PQC handshakes since init.
+        handshakes-failed: u32,
+    }
+
+    // -------------------------------------------------------------------------
+    // Initialization
+    // -------------------------------------------------------------------------
+
+    /// Initialize the gossip component with a JSON configuration.
+    ///
+    /// Must be called exactly once before any other function.
+    /// Generates or restores node identity (KEM + SIG keypairs).
+    ///
+    /// Config JSON schema:
+    /// {
+    ///   "node_id": "optional-override",
+    ///   "kem_seed_hex": "optional-96-byte-hex",
+    ///   "sig_seed_hex": "optional-32-byte-hex",
+    ///   "key_epoch": "ephemeral-runtime",
+    ///   "mesh_n": 8,
+    ///   "mesh_n_low": 4,
+    ///   "mesh_n_high": 12,
+    ///   "heartbeat_ms": 700,
+    ///   "max_message_bytes": 1048576,
+    ///   "dedup_cache_secs": 60,
+    ///   "quorum_fraction": 0.67,
+    ///   "replay_window_ms": 30000,
+    ///   "default_ttl": 8
+    /// }
+    ///
+    /// Returns: ok(unit) on success, or gossip-error on failure.
+    gossip-init: func(config-json: string) -> result<_, gossip-error>;
+
+    // -------------------------------------------------------------------------
+    // Publishing
+    // -------------------------------------------------------------------------
+
+    /// Publish a message to the gossip mesh.
+    ///
+    /// Builds a signed GossipEnvelope, checks dedup cache, and returns
+    /// the 32-byte message ID. The host is responsible for actually
+    /// transmitting the encoded envelope to mesh peers.
+    ///
+    /// Use gossip-encode-envelope to get the wire bytes to send.
+    ///
+    /// Parameters:
+    ///   payload-type-id: u8 discriminant (0=transaction, 1=block-proposal,
+    ///                    2=finality-vote, 3=state-sync, 4=peer-discovery)
+    ///   payload: raw message bytes (max 1MB by default)
+    ///
+    /// Returns: 32-byte message ID on success.
+    gossip-publish: func(
+        payload-type-id: u8,
+        payload: list<u8>,
+    ) -> result<list<u8>, gossip-error>;
+
+    // -------------------------------------------------------------------------
+    // Peer management
+    // -------------------------------------------------------------------------
+
+    /// Initiate a PQC handshake with a peer.
+    ///
+    /// Generates the first handshake message (identity probe) and returns
+    /// it as bytes for the host to transmit. The host must call
+    /// gossip-process-handshake-bytes as responses arrive.
+    ///
+    /// Returns: session-id hex string on successful handshake completion.
+    /// Note: In the synchronous model, this returns the probe bytes.
+    ///       The host drives the handshake exchange and calls back.
+    gossip-connect-peer: func(peer-addr: string) -> result<string, gossip-error>;
+
+    /// Disconnect from a peer and remove their session.
+    gossip-disconnect-peer: func(peer-addr: string) -> result<_, gossip-error>;
+
+    /// Get the list of currently connected peers as a JSON array.
+    ///
+    /// Returns JSON: [{"addr":"...","node_id":"...","session_id":"...","established_at_ms":...}]
+    gossip-get-peers: func() -> result<string, gossip-error>;
+
+    // -------------------------------------------------------------------------
+    // Identity
+    // -------------------------------------------------------------------------
+
+    /// Get the node's public identity as a JSON object.
+    ///
+    /// Returns JSON:
+    /// {
+    ///   "node_id": "hex...",
+    ///   "kem_public_key_json": "{...}",
+    ///   "sig_public_key_hex": "hex...",
+    ///   "key_epoch": "ephemeral-runtime"
+    /// }
+    gossip-get-node-identity: func() -> result<string, gossip-error>;
+
+    // -------------------------------------------------------------------------
+    // Envelope operations
+    // -------------------------------------------------------------------------
+
+    /// Verify a received GossipEnvelope (bincode-encoded bytes).
+    ///
+    /// Checks:
+    ///   1. Bincode deserialization succeeds
+    ///   2. message_id == SHA-256(payload_type_byte || payload)
+    ///   3. ML-DSA-65 signature valid over (message_id || payload_type || payload)
+    ///   4. timestamp_unix_ms within +-30s of current time
+    ///   5. ttl > 0
+    ///
+    /// Returns: true if all checks pass, false otherwise.
+    gossip-verify-envelope: func(envelope-bytes: list<u8>) -> result<bool, gossip-error>;
+
+    /// Encode a new signed GossipEnvelope to bincode bytes.
+    ///
+    /// Builds the envelope, signs it with the node's ML-DSA-65 key,
+    /// and returns the bincode-encoded bytes ready for transmission.
+    gossip-encode-envelope: func(
+        payload-type-id: u8,
+        payload: list<u8>,
+    ) -> result<list<u8>, gossip-error>;
+
+    /// Decode a GossipEnvelope from bincode bytes to a JSON string.
+    ///
+    /// Returns JSON representation of the GossipEnvelope fields.
+    /// Signature bytes are hex-encoded in the JSON output.
+    gossip-decode-envelope: func(bytes: list<u8>) -> result<string, gossip-error>;
+
+    // -------------------------------------------------------------------------
+    // Statistics
+    // -------------------------------------------------------------------------
+
+    /// Get runtime statistics as a JSON object.
+    ///
+    /// Returns JSON matching the gossip-stats record fields.
+    gossip-get-stats: func() -> result<string, gossip-error>;
+
+    // -------------------------------------------------------------------------
+    // Handshake message processing (host-driven I/O model)
+    // -------------------------------------------------------------------------
+
+    /// Process incoming handshake bytes from a peer.
+    ///
+    /// The host calls this when it receives bytes from a peer during
+    /// the handshake phase. Returns optional response bytes to send back,
+    /// or none if the handshake is complete or no response is needed.
+    ///
+    /// The host must track which phase each peer is in and route bytes here.
+    gossip-process-handshake-bytes: func(
+        peer-addr: string,
+        bytes: list<u8>,
+    ) -> result<option<list<u8>>, gossip-error>;
+
+    /// Build the server-side handshake ACK (step 2 of 4).
+    ///
+    /// Called by a node acting as server when it receives a probe.
+    /// Returns the ACK bytes to send back to the client.
+    gossip-build-handshake-ack: func(
+        peer-addr: string,
+        probe-bytes: list<u8>,
+    ) -> result<list<u8>, gossip-error>;
+
+    /// Build the server-side finish ACK (step 4 of 4).
+    ///
+    /// Called by a node acting as server when it receives the finish probe.
+    /// Returns the finish ACK bytes and completes the session.
+    gossip-build-finish-ack: func(
+        peer-addr: string,
+        finish-bytes: list<u8>,
+    ) -> result<list<u8>, gossip-error>;
+
+    // -------------------------------------------------------------------------
+    // Utility
+    // -------------------------------------------------------------------------
+
+    /// Get the current Unix timestamp in milliseconds.
+    /// (Provided by the component using WASI clock.)
+    gossip-now-ms: func() -> u64;
+
+    /// Verify a standalone ML-DSA-65 signature.
+    ///
+    /// Useful for the host to verify node identity claims independently.
+    gossip-verify-signature: func(
+        public-key-bytes: list<u8>,
+        message: list<u8>,
+        signature: list<u8>,
+        context: list<u8>,
+    ) -> result<bool, gossip-error>;
+}
+
+// -------------------------------------------------------------------------
+// World definition
+// -------------------------------------------------------------------------
+
+/// The WASM component world for the Witan-Gossip gossip protocol.
+///
+/// The component exports the gossip-protocol interface.
+/// The host provides WASI standard interfaces (clocks, random).
+world gossip-world {
+    /// The gossip protocol API exported by the component.
+    export gossip-protocol;
+
+    /// WASI monotonic clock (for timestamps).
+    import wasi:clocks/monotonic-clock@0.2.0;
+
+    /// WASI wall clock (for Unix timestamps).
+    import wasi:clocks/wall-clock@0.2.0;
+
+    /// WASI random (for nonce generation, key generation).
+    import wasi:random/random@0.2.0;
+}

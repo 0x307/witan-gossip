@@ -1,0 +1,702 @@
+// gossip.proto
+// Protocol Buffers v3 definition for the witan-gossip component.
+// Package: witan.gossip.v1
+//
+// This file mirrors the WIT interface at pqc-gossip/wit/gossip-protocol.wit
+// and the Rust types in pqc-gossip/src/types.rs.
+//
+// Python usage:
+//   python -m grpc_tools.protoc -I. --python_out=. --grpc_python_out=. proto/gossip.proto
+//
+// Go usage:
+//   protoc --go_out=. --go-grpc_out=. proto/gossip.proto
+
+syntax = "proto3";
+
+package witan.gossip.v1;
+
+option go_package = "github.com/witan-gossip/witan-gossip/proto/v1;gossipv1";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Error codes
+// ─────────────────────────────────────────────────────────────────────────────
+
+// All error codes returned by the gossip component.
+// Mirrors GossipError in pqc-gossip/src/error.rs.
+enum ErrorCode {
+  // Default / no error.
+  ERROR_CODE_UNSPECIFIED = 0;
+
+  // gossip_init has not been called yet.
+  ERROR_CODE_NOT_INITIALIZED = 1;
+
+  // gossip_init was called more than once.
+  ERROR_CODE_ALREADY_INITIALIZED = 2;
+
+  // Config JSON parse error or invalid field value.
+  ERROR_CODE_CONFIG_ERROR = 3;
+
+  // Key generation or seed parsing failed.
+  ERROR_CODE_IDENTITY_ERROR = 4;
+
+  // PQC handshake protocol violation or timeout.
+  ERROR_CODE_HANDSHAKE_ERROR = 5;
+
+  // No active session for the given peer address.
+  ERROR_CODE_SESSION_NOT_FOUND = 6;
+
+  // Envelope field validation, encode, or decode error.
+  ERROR_CODE_ENVELOPE_ERROR = 7;
+
+  // ML-DSA-65 signature verification returned false.
+  ERROR_CODE_SIGNATURE_INVALID = 8;
+
+  // Message timestamp outside ±replay_window_ms.
+  ERROR_CODE_REPLAY_DETECTED = 9;
+
+  // Envelope TTL reached 0.
+  ERROR_CODE_TTL_EXPIRED = 10;
+
+  // Peer address not in active session store.
+  ERROR_CODE_PEER_NOT_FOUND = 11;
+
+  // BFT quorum not yet reached for a message.
+  ERROR_CODE_QUORUM_NOT_REACHED = 12;
+
+  // bincode or serde_json error.
+  ERROR_CODE_SERIALIZATION_ERROR = 13;
+
+  // PQC cryptographic operation failed.
+  ERROR_CODE_CRYPTO_ERROR = 14;
+
+  // Invalid function argument (e.g. unknown payload_type_id).
+  ERROR_CODE_INVALID_INPUT = 15;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Payload type enum
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Discriminant for the gossip message payload.
+// Mirrors PayloadType in pqc-gossip/src/types.rs.
+enum PayloadType {
+  // Blockchain transaction. Gossip to all mesh peers.
+  PAYLOAD_TYPE_TRANSACTION = 0;
+
+  // Block proposal from a validator. High priority.
+  PAYLOAD_TYPE_BLOCK_PROPOSAL = 1;
+
+  // Finality vote from a validator. High priority.
+  PAYLOAD_TYPE_FINALITY_VOTE = 2;
+
+  // State synchronization data. May be large.
+  PAYLOAD_TYPE_STATE_SYNC = 3;
+
+  // Peer discovery advertisement. Contains PeerInfo JSON.
+  PAYLOAD_TYPE_PEER_DISCOVERY = 4;
+
+  // Heartbeat message (extension, not in base WIT).
+  PAYLOAD_TYPE_HEARTBEAT = 5;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Core message types
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Configuration for the gossip component.
+// Mirrors GossipConfig in pqc-gossip/src/config.rs.
+// All fields are optional; missing fields use component defaults.
+message GossipConfig {
+  // Optional node ID override. If empty, derived from keypairs.
+  string node_id = 1;
+
+  // Optional KEM seed as hex string.
+  // Must be 96 bytes (192 hex chars): 32 x25519 + 64 mlkem secret.
+  string kem_seed_hex = 2;
+
+  // Optional SIG seed as hex string.
+  // Must be 32 bytes (64 hex chars): ML-DSA-65 seed.
+  string sig_seed_hex = 3;
+
+  // Key epoch label. Default: "ephemeral-runtime".
+  string key_epoch = 4;
+
+  // Target mesh degree. Default: 8.
+  uint32 mesh_n = 5;
+
+  // Minimum mesh degree before adding peers. Default: 4.
+  uint32 mesh_n_low = 6;
+
+  // Maximum mesh degree before pruning peers. Default: 12.
+  uint32 mesh_n_high = 7;
+
+  // Heartbeat interval in milliseconds. Default: 700.
+  uint64 heartbeat_ms = 8;
+
+  // Maximum message size in bytes. Default: 1048576 (1MB).
+  uint64 max_message_bytes = 9;
+
+  // Deduplication cache TTL in seconds. Default: 60.
+  uint64 dedup_cache_secs = 10;
+
+  // BFT quorum fraction (0.0–1.0). Default: 0.67.
+  double quorum_fraction = 11;
+
+  // Replay protection window in milliseconds. Default: 30000 (±30s).
+  uint64 replay_window_ms = 12;
+
+  // Default TTL hop count for new envelopes. Default: 8.
+  uint32 default_ttl = 13;
+}
+
+// The fundamental unit of gossip — a signed, typed message.
+// Mirrors GossipEnvelope in pqc-gossip/src/types.rs.
+// Wire format in the WASM component: bincode. This proto is for RPC transport.
+message GossipEnvelope {
+  // Protocol version. Always 1 for this implementation.
+  uint32 version = 1;
+
+  // SHA-256(payload_type_byte || payload). 32 bytes.
+  bytes message_id = 2;
+
+  // Node identity string. Format: SHA-256(kem_pk || sig_pk) as lowercase hex.
+  string sender_node_id = 3;
+
+  // ML-DSA-65 public key of the sender. 1952 bytes.
+  bytes sender_public_key = 4;
+
+  // Payload type discriminant.
+  PayloadType payload_type = 5;
+
+  // Raw application payload bytes. Max 1MB (configurable).
+  bytes payload = 6;
+
+  // ML-DSA-65 signature over (message_id || payload_type_byte || payload).
+  // Context: b"WITAN_GOSSIP_MESSAGE_V1". Size: 3309 bytes.
+  bytes signature = 7;
+
+  // Unix timestamp in milliseconds when the envelope was created.
+  uint64 timestamp_unix_ms = 8;
+
+  // Hop count limit. Decremented by each forwarding node. Default: 8.
+  uint32 ttl = 9;
+}
+
+// Public-only view of NodeIdentity, safe to serialize and send.
+// Mirrors NodeIdentityPublic in pqc-gossip/src/types.rs.
+message NodeIdentityPublic {
+  // Node identifier (64-char hex).
+  string node_id = 1;
+
+  // HybridPublicKey serialized as JSON.
+  // Contains X25519 and ML-KEM-768 public key components.
+  string kem_public_key_json = 2;
+
+  // ML-DSA-65 public key as lowercase hex. 1952 bytes = 3904 hex chars.
+  string sig_public_key_hex = 3;
+
+  // Key epoch label.
+  string key_epoch = 4;
+}
+
+// Public information about a connected peer.
+// Mirrors PeerInfo in pqc-gossip/src/types.rs.
+message PeerInfo {
+  // Network address (e.g. "192.168.1.10:9000" or "[::1]:9000").
+  string addr = 1;
+
+  // Peer's node ID (64-char hex).
+  string node_id = 2;
+
+  // Active session ID (64-char hex).
+  string session_id = 3;
+
+  // Unix timestamp (ms) when the session was established.
+  uint64 established_at_ms = 4;
+}
+
+// Runtime statistics for the gossip component.
+// Mirrors GossipStats in pqc-gossip/src/types.rs.
+message GossipStats {
+  // Total envelopes published by this node.
+  uint64 messages_published = 1;
+
+  // Total envelopes received from peers.
+  uint64 messages_received = 2;
+
+  // Total envelopes rejected as duplicates.
+  uint64 messages_deduplicated = 3;
+
+  // Total envelopes dropped (TTL=0, replay, invalid sig, oversized).
+  uint64 messages_dropped = 4;
+
+  // Number of currently active peer sessions.
+  uint32 active_peers = 5;
+
+  // Number of peers currently in the gossip mesh.
+  uint32 mesh_peers = 6;
+
+  // Current size of the dedup cache.
+  uint32 dedup_cache_size = 7;
+
+  // Total PQC handshakes completed successfully since init.
+  uint32 handshakes_completed = 8;
+
+  // Total PQC handshakes that failed since init.
+  uint32 handshakes_failed = 9;
+}
+
+// Handshake Message 1: Client → Server.
+// Mirrors HandshakeProbe in pqc-gossip/src/types.rs.
+message HandshakeIdentityProbe {
+  // Magic bytes: b"WITAN_GOSSIP_HANDSHAKE_V1".
+  bytes magic = 1;
+
+  // Protocol version. Always 1.
+  uint32 version = 2;
+
+  // 32-byte random nonce generated by the client.
+  bytes client_nonce = 3;
+
+  // Client's network endpoint string.
+  string endpoint = 4;
+
+  // Client's node ID (64-char hex).
+  string client_node_id = 5;
+
+  // Unix timestamp (ms) when the probe was created.
+  uint64 timestamp_unix_ms = 6;
+}
+
+// Handshake Message 2: Server → Client.
+// Mirrors HandshakeAck in pqc-gossip/src/types.rs.
+message HandshakeIdentityAck {
+  // Magic bytes: b"WITAN_GOSSIP_HANDSHAKE_ACK_V1".
+  bytes magic = 1;
+
+  // Protocol version. Always 1.
+  uint32 version = 2;
+
+  // Echo of the client's nonce.
+  bytes client_nonce = 3;
+
+  // 32-byte random nonce generated by the server.
+  bytes server_nonce = 4;
+
+  // Server's HybridPublicKey serialized as JSON.
+  string hybrid_kem_public_key_json = 5;
+
+  // Server's ML-DSA-65 public key. 1952 bytes.
+  bytes ml_dsa_65_public_key = 6;
+
+  // Server's node ID (64-char hex).
+  string server_node_id = 7;
+
+  // Unix timestamp (ms).
+  uint64 timestamp_unix_ms = 8;
+}
+
+// Handshake Message 3: Client → Server.
+// Mirrors HandshakeFinish in pqc-gossip/src/types.rs.
+message HandshakeFinishProbe {
+  // Magic bytes: b"WITAN_GOSSIP_HANDSHAKE_FINISH_V1".
+  bytes magic = 1;
+
+  // Protocol version. Always 1.
+  uint32 version = 2;
+
+  // KEM ciphertext serialized as JSON.
+  string kem_ciphertext_json = 3;
+
+  // Client's ML-DSA-65 public key. 1952 bytes.
+  bytes client_ml_dsa_65_public_key = 4;
+
+  // Client's node ID (64-char hex).
+  string client_node_id = 5;
+
+  // Unix timestamp (ms).
+  uint64 timestamp_unix_ms = 6;
+}
+
+// Handshake Message 4: Server → Client.
+// Mirrors HandshakeFinishAck in pqc-gossip/src/types.rs.
+message HandshakeFinishAck {
+  // Magic bytes: b"WITAN_GOSSIP_HANDSHAKE_FINISH_ACK_V1".
+  bytes magic = 1;
+
+  // Protocol version. Always 1.
+  uint32 version = 2;
+
+  // Derived session ID (64-char hex).
+  string session_id = 3;
+
+  // SHA-256 of the full handshake transcript. 32 bytes.
+  bytes transcript_hash = 4;
+
+  // HMAC-SHA256(shared_secret_32b, transcript_hash). 32 bytes.
+  bytes server_mac = 5;
+
+  // ML-DSA-65 signature over transcript_hash. 3309 bytes.
+  bytes transcript_signature = 6;
+
+  // Unix timestamp (ms).
+  uint64 timestamp_unix_ms = 7;
+}
+
+// Session record for a connected peer.
+message SessionRecord {
+  // Peer network address.
+  string peer_addr = 1;
+
+  // Peer's node ID (64-char hex).
+  string peer_node_id = 2;
+
+  // Session ID (64-char hex).
+  string session_id = 3;
+
+  // Unix timestamp (ms) when the session was established.
+  uint64 established_at_ms = 4;
+
+  // Whether the session is currently active.
+  bool is_active = 5;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RPC request / response messages
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Init ────────────────────────────────────────────────────────────────────────
+
+message InitRequest {
+  // JSON configuration string. See GossipConfig for schema.
+  // Pass "{}" to use all defaults.
+  string config_json = 1;
+}
+
+message InitResponse {
+  // Error code. ERROR_CODE_UNSPECIFIED on success.
+  ErrorCode error_code = 1;
+
+  // Human-readable error message. Empty on success.
+  string error_message = 2;
+}
+
+// Publish ─────────────────────────────────────────────────────────────────────
+
+message PublishRequest {
+  // Payload type discriminant (0–4).
+  uint32 payload_type_id = 1;
+
+  // Raw message bytes. Max 1MB by default.
+  bytes payload = 2;
+}
+
+message PublishResponse {
+  // Error code. ERROR_CODE_UNSPECIFIED on success.
+  ErrorCode error_code = 1;
+
+  // Human-readable error message. Empty on success.
+  string error_message = 2;
+
+  // 32-byte message ID (SHA-256 of payload_type_byte || payload).
+  bytes message_id = 3;
+}
+
+// ConnectPeer ─────────────────────────────────────────────────────────────────
+
+message ConnectPeerRequest {
+  // Network address of the peer (e.g. "192.168.1.10:9000").
+  string peer_addr = 1;
+}
+
+message ConnectPeerResponse {
+  // Error code. ERROR_CODE_UNSPECIFIED on success.
+  ErrorCode error_code = 1;
+
+  // Human-readable error message. Empty on success.
+  string error_message = 2;
+
+  // Probe bytes to transmit to the peer to initiate the handshake.
+  // The host must send these bytes to the peer out-of-band.
+  bytes probe_bytes = 3;
+}
+
+// DisconnectPeer ──────────────────────────────────────────────────────────────
+
+message DisconnectPeerRequest {
+  // Network address of the peer to disconnect.
+  string peer_addr = 1;
+}
+
+message DisconnectPeerResponse {
+  // Error code. ERROR_CODE_UNSPECIFIED on success.
+  ErrorCode error_code = 1;
+
+  // Human-readable error message. Empty on success.
+  string error_message = 2;
+}
+
+// GetPeers ────────────────────────────────────────────────────────────────────
+
+message GetPeersRequest {}
+
+message GetPeersResponse {
+  // Error code. ERROR_CODE_UNSPECIFIED on success.
+  ErrorCode error_code = 1;
+
+  // Human-readable error message. Empty on success.
+  string error_message = 2;
+
+  // List of currently connected peers.
+  repeated PeerInfo peers = 3;
+
+  // Raw JSON string (alternative to structured peers field).
+  string peers_json = 4;
+}
+
+// GetNodeIdentity ─────────────────────────────────────────────────────────────
+
+message GetNodeIdentityRequest {}
+
+message GetNodeIdentityResponse {
+  // Error code. ERROR_CODE_UNSPECIFIED on success.
+  ErrorCode error_code = 1;
+
+  // Human-readable error message. Empty on success.
+  string error_message = 2;
+
+  // Node public identity.
+  NodeIdentityPublic identity = 3;
+
+  // Raw JSON string (alternative to structured identity field).
+  string identity_json = 4;
+}
+
+// VerifyEnvelope ──────────────────────────────────────────────────────────────
+
+message VerifyEnvelopeRequest {
+  // Bincode-encoded GossipEnvelope bytes.
+  bytes envelope_bytes = 1;
+}
+
+message VerifyEnvelopeResponse {
+  // Error code. ERROR_CODE_UNSPECIFIED on success.
+  ErrorCode error_code = 1;
+
+  // Human-readable error message. Empty on success.
+  string error_message = 2;
+
+  // true if all verification checks pass, false otherwise.
+  bool valid = 3;
+}
+
+// EncodeEnvelope ──────────────────────────────────────────────────────────────
+
+message EncodeEnvelopeRequest {
+  // Payload type discriminant (0–4).
+  uint32 payload_type_id = 1;
+
+  // Raw message bytes.
+  bytes payload = 2;
+}
+
+message EncodeEnvelopeResponse {
+  // Error code. ERROR_CODE_UNSPECIFIED on success.
+  ErrorCode error_code = 1;
+
+  // Human-readable error message. Empty on success.
+  string error_message = 2;
+
+  // Bincode-encoded, signed GossipEnvelope bytes ready for transmission.
+  bytes envelope_bytes = 3;
+}
+
+// DecodeEnvelope ──────────────────────────────────────────────────────────────
+
+message DecodeEnvelopeRequest {
+  // Bincode-encoded GossipEnvelope bytes.
+  bytes envelope_bytes = 1;
+}
+
+message DecodeEnvelopeResponse {
+  // Error code. ERROR_CODE_UNSPECIFIED on success.
+  ErrorCode error_code = 1;
+
+  // Human-readable error message. Empty on success.
+  string error_message = 2;
+
+  // Decoded envelope as structured message.
+  GossipEnvelope envelope = 3;
+
+  // Raw JSON string (alternative to structured envelope field).
+  string envelope_json = 4;
+}
+
+// GetStats ────────────────────────────────────────────────────────────────────
+
+message GetStatsRequest {}
+
+message GetStatsResponse {
+  // Error code. ERROR_CODE_UNSPECIFIED on success.
+  ErrorCode error_code = 1;
+
+  // Human-readable error message. Empty on success.
+  string error_message = 2;
+
+  // Runtime statistics.
+  GossipStats stats = 3;
+
+  // Raw JSON string (alternative to structured stats field).
+  string stats_json = 4;
+}
+
+// ProcessHandshakeBytes ───────────────────────────────────────────────────────
+
+message ProcessHandshakeBytesRequest {
+  // Network address of the peer sending the handshake bytes.
+  string peer_addr = 1;
+
+  // Raw handshake bytes received from the peer.
+  bytes bytes = 2;
+}
+
+message ProcessHandshakeBytesResponse {
+  // Error code. ERROR_CODE_UNSPECIFIED on success.
+  ErrorCode error_code = 1;
+
+  // Human-readable error message. Empty on success.
+  string error_message = 2;
+
+  // Optional response bytes to send back to the peer.
+  // Empty if no response is needed (handshake complete or no reply required).
+  bytes response_bytes = 3;
+
+  // Whether response_bytes is present (distinguishes empty response from none).
+  bool has_response = 4;
+}
+
+// CreateHandshakeInit ─────────────────────────────────────────────────────────
+
+message CreateHandshakeInitRequest {
+  // Network address of the peer to initiate handshake with.
+  string peer_addr = 1;
+}
+
+message CreateHandshakeInitResponse {
+  // Error code. ERROR_CODE_UNSPECIFIED on success.
+  ErrorCode error_code = 1;
+
+  // Human-readable error message. Empty on success.
+  string error_message = 2;
+
+  // Handshake probe bytes to send to the peer.
+  bytes probe_bytes = 3;
+}
+
+// GetSession ──────────────────────────────────────────────────────────────────
+
+message GetSessionRequest {
+  // Network address of the peer.
+  string peer_addr = 1;
+}
+
+message GetSessionResponse {
+  // Error code. ERROR_CODE_UNSPECIFIED on success.
+  ErrorCode error_code = 1;
+
+  // Human-readable error message. Empty on success.
+  string error_message = 2;
+
+  // Session record for the peer.
+  SessionRecord session = 3;
+
+  // Raw JSON string (alternative to structured session field).
+  string session_json = 4;
+}
+
+// RotateKeys ──────────────────────────────────────────────────────────────────
+
+message RotateKeysRequest {}
+
+message RotateKeysResponse {
+  // Error code. ERROR_CODE_UNSPECIFIED on success.
+  ErrorCode error_code = 1;
+
+  // Human-readable error message. Empty on success.
+  string error_message = 2;
+
+  // New node ID (64-char hex) after key rotation.
+  string new_node_id = 3;
+}
+
+// GetVersion ──────────────────────────────────────────────────────────────────
+
+message GetVersionRequest {}
+
+message GetVersionResponse {
+  // Protocol version string (e.g. "0.1.0").
+  string version = 1;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GossipService — gRPC service definition
+// ─────────────────────────────────────────────────────────────────────────────
+
+// GossipService exposes the full witan-gossip API over gRPC.
+//
+// A typical gRPC gateway server wraps a GossipClient (Rust/Go/Python binding)
+// and delegates each RPC to the corresponding WASM function.
+//
+// Note: The WASM component is stateful and single-threaded. The gRPC server
+// must serialize concurrent calls to the WASM instance (e.g. via a mutex).
+service GossipService {
+  // Initialize the gossip engine with a JSON configuration.
+  // Must be called exactly once before any other RPC.
+  rpc Init(InitRequest) returns (InitResponse);
+
+  // Publish a message to the gossip mesh.
+  // Returns the 32-byte message ID.
+  rpc Publish(PublishRequest) returns (PublishResponse);
+
+  // Initiate a PQC handshake with a peer.
+  // Returns probe bytes for the host to transmit to the peer.
+  rpc ConnectPeer(ConnectPeerRequest) returns (ConnectPeerResponse);
+
+  // Disconnect from a peer and remove their session.
+  rpc DisconnectPeer(DisconnectPeerRequest) returns (DisconnectPeerResponse);
+
+  // Get the list of currently connected peers.
+  rpc GetPeers(GetPeersRequest) returns (GetPeersResponse);
+
+  // Get the node's public identity.
+  rpc GetNodeIdentity(GetNodeIdentityRequest) returns (GetNodeIdentityResponse);
+
+  // Verify a received GossipEnvelope (bincode-encoded bytes).
+  rpc VerifyEnvelope(VerifyEnvelopeRequest) returns (VerifyEnvelopeResponse);
+
+  // Encode a new signed GossipEnvelope to bincode bytes.
+  rpc EncodeEnvelope(EncodeEnvelopeRequest) returns (EncodeEnvelopeResponse);
+
+  // Decode a GossipEnvelope from bincode bytes.
+  rpc DecodeEnvelope(DecodeEnvelopeRequest) returns (DecodeEnvelopeResponse);
+
+  // Get runtime statistics.
+  rpc GetStats(GetStatsRequest) returns (GetStatsResponse);
+
+  // Process incoming handshake bytes from a peer.
+  // Returns optional response bytes to send back.
+  rpc ProcessHandshakeBytes(ProcessHandshakeBytesRequest) returns (ProcessHandshakeBytesResponse);
+
+  // Create handshake init bytes to send to a peer (alias for ConnectPeer probe).
+  rpc CreateHandshakeInit(CreateHandshakeInitRequest) returns (CreateHandshakeInitResponse);
+
+  // Get session info for a connected peer.
+  rpc GetSession(GetSessionRequest) returns (GetSessionResponse);
+
+  // Rotate node identity keys. Returns new node_id.
+  // Warning: invalidates all existing sessions.
+  rpc RotateKeys(RotateKeysRequest) returns (RotateKeysResponse);
+
+  // Get the protocol version string.
+  rpc GetVersion(GetVersionRequest) returns (GetVersionResponse);
+}
