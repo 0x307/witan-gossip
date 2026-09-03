@@ -56,25 +56,27 @@ hex = "0.4"
 rand = { version = "0.8", default-features = false, features = ["getrandom"] }
 
 # ---------------------------------------------------------------------------
-# Target-specific getrandom: js feature for browser WASM, none for WASI/native
+# Target-specific dependencies
+#
+# Supported WASM target is wasm32-wasip2 (and wasm32-wasip1 for the deprecated
+# `wasi-abi` surface). On both, getrandom and std's clock route through WASI —
+# no entropy shim is required. wasm32-unknown-unknown is deliberately NOT
+# supported: it has no WASI clock, so it would compile and then fail at
+# runtime. Leaving it unconfigured makes that a loud build error instead.
 # ---------------------------------------------------------------------------
 
-# Browser/Node.js WASM (wasm32 but NOT wasi): needs "js" feature for entropy
-[target.'cfg(all(target_arch = "wasm32", not(target_os = "wasi")))'.dependencies]
-getrandom = { version = "0.2", features = ["js"] }
-
-# WASI target: getrandom uses WASI random_get syscall automatically
+# WASI target: getrandom uses the WASI random interface automatically
 [target.'cfg(target_os = "wasi")'.dependencies]
 getrandom = { version = "0.2" }
 
 # ---------------------------------------------------------------------------
-# WASM-only dependencies
+# WASM Component Model guest bindings
+#
+# Generates the exported `witan:gossip/gossip-world` interface from
+# wit/gossip-protocol.wit. See src/component.rs for the Guest implementation.
 # ---------------------------------------------------------------------------
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-
-# WASI bindings for clocks and random (provided by cargo-component / wit-bindgen)
-# These are imported via the WIT world definition, not as direct crate deps.
-# wit-bindgen generates the glue code automatically.
+wit-bindgen = "0.61"
 
 # ---------------------------------------------------------------------------
 # Native-only dependencies (integration tests, benchmarks)
@@ -110,29 +112,15 @@ proptest = "1.4"
 [features]
 default = []
 
-# Enable WASM-specific bindings (js_sys::Date for timestamps)
-wasm = []
-
-# Enable WASI target exports (wasm32-wasip1)
-wasi = []
+# DEPRECATED — legacy hand-rolled C-ABI exports (`gossip_*_wasi`) for
+# wasm32-wasip1 core-module hosts. Superseded by the WASM Component Model
+# interface, which is the default and needs no feature flag. Retained only for
+# consumers that integrated against the raw ptr/len ABI before the component
+# export existed; scheduled for removal in a future release (CRA ticket).
+wasi-abi = []
 
 # Enable native QUIC/TCP transport for integration tests
 native-transport = ["dep:quinn", "dep:rustls", "dep:rcgen", "dep:tokio"]
 
-# Enable test helper utilities
-test-utils = []
-
-# ---------------------------------------------------------------------------
-# Build profile: WASM release (optimize for size)
-# ---------------------------------------------------------------------------
-[profile.release]
-opt-level = "z"         # optimize for size
-lto = true              # link-time optimization
-codegen-units = 1       # single codegen unit for better LTO
-panic = "abort"         # no unwinding in WASM
-strip = true            # strip debug symbols
-
-# Development profile (fast compile, debug info)
-[profile.dev]
-opt-level = 0
-debug = true
+# Build profiles live in the workspace root Cargo.toml — cargo ignores
+# `[profile.*]` set in a member package.

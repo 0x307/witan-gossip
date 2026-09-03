@@ -31,7 +31,7 @@
 //!   SESSION ESTABLISHED on both sides
 //! ```
 
-mod abi;
+
 mod node;
 
 use anyhow::{Context, Result};

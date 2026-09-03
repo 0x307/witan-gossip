@@ -47,12 +47,41 @@ interface, build instructions, and API reference.
 cargo build -p witan-gossip
 
 # Build the WASM component
-rustup target add wasm32-wasip1
-cargo build -p witan-gossip --target wasm32-wasip1 --release
+rustup target add wasm32-wasip2
+cargo build -p witan-gossip --target wasm32-wasip2 --release
 
 # Run the in-process 3-node integration harness against the built component
-cargo run -p wasmtime-test -- target/wasm32-wasip1/release/witan_gossip.wasm
+cargo run -p wasmtime-test -- target/wasm32-wasip2/release/witan_gossip.wasm
 ```
+
+`wasm32-wasip2` emits a WASM Component directly — no post-processing step.
+Inspect the artifact and its interface with:
+
+```bash
+wasm-tools component wit target/wasm32-wasip2/release/witan_gossip.wasm
+```
+
+`cargo component build -p witan-gossip --release` also works and produces an
+equivalent component via `wasm32-wasip1` plus an adapter. Both paths are covered
+in CI.
+
+### Deprecated: legacy C-ABI
+
+Before the component export existed, this crate exposed a hand-rolled ptr/len
+C-ABI (`gossip_*_wasi`) for `wasm32-wasip1` core-module hosts. It survives behind
+an off-by-default feature for consumers who already integrated against it, and is
+scheduled for removal in a future release:
+
+```bash
+cargo build -p witan-gossip --target wasm32-wasip1 --release --features wasi-abi
+```
+
+New integrations should use the component interface, which needs no feature flag
+and no manual memory management.
+
+`wasm32-unknown-unknown` is **not** supported: it has no WASI wall clock, so the
+crate deliberately fails to build there rather than compiling and then panicking
+at runtime.
 
 ## Testing
 

@@ -15,16 +15,61 @@ jobs:
       - run: cargo build -p witan-gossip
       - run: cargo test -p witan-gossip
 
-  wasm32-wasip1:
+  # The component build and the downstream consumer that drives it. This is the
+  # job that proves the WASM Component Model claim: a crate that builds is not
+  # the same as a component a host can actually instantiate and call.
+  component:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-tools
+      - run: cargo build -p witan-gossip --target wasm32-wasip2 --release
+
+      - name: artifact is a valid component
+        run: wasm-tools validate --features all target/wasm32-wasip2/release/witan_gossip.wasm
+
+      - name: component exports the gossip interface
+        run: |
+          wasm-tools component wit target/wasm32-wasip2/release/witan_gossip.wasm \
+            | grep -q 'export witan:gossip/gossip-protocol@0.1.0;'
+
+      - name: downstream-consumer check (3-node wasmtime mesh)
+        run: cargo run -p wasmtime-test -- target/wasm32-wasip2/release/witan_gossip.wasm
+
+  # The alternative build path documented in the README. Guards against the
+  # docs promising a toolchain nobody exercises.
+  cargo-component:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-wasip1
-      - run: cargo build -p witan-gossip --target wasm32-wasip1 --release
-      - name: downstream-consumer check (wasmtime harness)
-        run: cargo run -p wasmtime-test -- target/wasm32-wasip1/release/witan_gossip.wasm
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-component,wasm-tools
+      - run: cargo component build -p witan-gossip --release
+      - name: adapter output is also a valid component with the same export
+        run: |
+          wasm-tools validate --features all target/wasm32-wasip1/release/witan_gossip.wasm
+          wasm-tools component wit target/wasm32-wasip1/release/witan_gossip.wasm \
+            | grep -q 'export witan:gossip/gossip-protocol@0.1.0;'
+
+  # The deprecated C-ABI surface. Kept in CI so it cannot rot silently while it
+  # is still supported, and so its removal is a deliberate act.
+  legacy-wasi-abi:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip1
+      - run: cargo build -p witan-gossip --target wasm32-wasip1 --release --features wasi-abi
 
   dry-run-publish:
     runs-on: ubuntu-latest
