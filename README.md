@@ -65,6 +65,20 @@ wasm-tools component wit target/wasm32-wasip2/release/witan_gossip.wasm
 equivalent component via `wasm32-wasip1` plus an adapter. Both paths are covered
 in CI.
 
+### Consuming this crate as a library
+
+The component export is emitted by an `export!` macro, and a dependency's
+exports are merged into the root crate's world. If you depend on `witan-gossip`
+from your own wasm component, disable the default `component` feature so its
+interface doesn't become part of *your* component's public surface:
+
+```toml
+witan-gossip = { version = "0.1", default-features = false }
+```
+
+The full Rust API stays available either way. See
+[`pqc-gossip/README.md`](pqc-gossip/README.md#depending-on-this-crate-from-your-own-component).
+
 ### Deprecated: legacy C-ABI
 
 Before the component export existed, this crate exposed a hand-rolled ptr/len

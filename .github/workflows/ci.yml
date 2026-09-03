@@ -41,6 +41,20 @@ jobs:
       - name: downstream-consumer check (3-node wasmtime mesh)
         run: cargo run -p wasmtime-test -- target/wasm32-wasip2/release/witan_gossip.wasm
 
+      # The `component` feature is what library consumers turn off to keep this
+      # crate's export out of their own component's world. Assert the export is
+      # genuinely absent, not just that the build succeeded — a gate that
+      # cannot be observed failing is not a gate.
+      - name: --no-default-features drops the export
+        run: |
+          set -euo pipefail
+          cargo build -p witan-gossip --target wasm32-wasip2 --release --no-default-features
+          if wasm-tools component wit target/wasm32-wasip2/release/witan_gossip.wasm \
+               | grep -q 'export witan:gossip/gossip-protocol'; then
+            echo "component feature is off but the interface is still exported"
+            exit 1
+          fi
+
   # The alternative build path documented in the README. Guards against the
   # docs promising a toolchain nobody exercises.
   cargo-component:
@@ -69,6 +83,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-wasip1
+      # --no-default-features isolates the deprecated surface: the legacy C-ABI
+      # on its own, without the component export also being compiled in.
+      - run: cargo build -p witan-gossip --target wasm32-wasip1 --release --no-default-features --features wasi-abi
+      # And alongside the component export, which is how it actually ships.
       - run: cargo build -p witan-gossip --target wasm32-wasip1 --release --features wasi-abi
 
   dry-run-publish:

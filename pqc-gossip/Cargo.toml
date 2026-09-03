@@ -74,9 +74,11 @@ getrandom = { version = "0.2" }
 #
 # Generates the exported `witan:gossip/gossip-world` interface from
 # wit/gossip-protocol.wit. See src/component.rs for the Guest implementation.
+# Optional so that `default-features = false` gives library consumers the plain
+# rlib without this crate's component export welded onto their world.
 # ---------------------------------------------------------------------------
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-wit-bindgen = "0.61"
+wit-bindgen = { version = "0.61", optional = true }
 
 # ---------------------------------------------------------------------------
 # Native-only dependencies (integration tests, benchmarks)
@@ -110,7 +112,22 @@ proptest = "1.4"
 # Features
 # ---------------------------------------------------------------------------
 [features]
-default = []
+default = ["component"]
+
+# Export the WASM Component Model interface (`witan:gossip/gossip-protocol`)
+# on wasm32 targets. On by default, so building this crate for wasm32-wasip2
+# produces a usable component with no extra flags.
+#
+# Turn it OFF (`default-features = false`) when depending on this crate as a
+# *library* from your own wasm component. The export is emitted by an
+# `export!` macro, and a dependency's exports are merged into the root crate's
+# world — so leaving it on adds `witan:gossip/gossip-protocol` to YOUR
+# component's public surface whether or not you want to expose it.
+#
+# Kept default-on deliberately: the opposite default fails silently, producing
+# a "component" with no gossip export that only breaks when a host tries to
+# instantiate it.
+component = ["dep:wit-bindgen"]
 
 # DEPRECATED — legacy hand-rolled C-ABI exports (`gossip_*_wasi`) for
 # wasm32-wasip1 core-module hosts. Superseded by the WASM Component Model

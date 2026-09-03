@@ -1128,10 +1128,39 @@ to build there.
 
 ### Feature Flags
 
-| Feature | Description |
-|---------|-------------|
-| `wasi-abi` | **Deprecated.** Legacy hand-rolled ptr/len C-ABI (`gossip_*_wasi`) for `wasm32-wasip1` core-module hosts, superseded by the component interface. Off by default; retained for pre-existing consumers and scheduled for removal. |
-| `native-transport` | Enable native QUIC/TCP transport (Quinn, Rustls, Tokio) for integration tests |
+| Feature | Default | Description |
+|---------|---------|-------------|
+| `component` | **on** | Export the `witan:gossip/gossip-protocol` Component Model interface on wasm32 targets. Turn off when consuming this crate as a library from your own component — see below. |
+| `wasi-abi` | off | **Deprecated.** Legacy hand-rolled ptr/len C-ABI (`gossip_*_wasi`) for `wasm32-wasip1` core-module hosts, superseded by the component interface. Retained for pre-existing consumers and scheduled for removal. |
+| `native-transport` | off | Enable native QUIC/TCP transport (Quinn, Rustls, Tokio) for integration tests |
+
+### Depending on this crate from your own component
+
+An `export!`ed interface in a *dependency* is merged into the **root** crate's
+world. So if you depend on `witan-gossip` from your own wasm component and leave
+the default features on, your component's public surface gains
+`witan:gossip/gossip-protocol` alongside your own exports, whether or not you
+meant to expose it:
+
+```
+world root {
+  export example:validator/validator@0.1.0;   # yours
+  export witan:gossip/gossip-protocol@0.1.0;  # inherited from the dependency
+}
+```
+
+Opt out to get the plain library:
+
+```toml
+[dependencies]
+witan-gossip = { version = "0.1", default-features = false }
+```
+
+You still call the full API through [`witan_gossip::*`](src/api.rs); you simply
+don't re-export the interface. Leave the feature on when you are building
+`witan-gossip` *itself* as a standalone component, which is why it is default-on:
+the opposite default fails silently, producing a component with no gossip export
+that only breaks when a host tries to instantiate it.
 
 ---
 

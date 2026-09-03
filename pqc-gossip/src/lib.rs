@@ -33,7 +33,13 @@
 //! - [`types`] — All domain types (GossipEnvelope, PayloadType, etc.)
 
 /// WASM Component Model export layer (`wasm32-wasip2`).
-#[cfg(target_arch = "wasm32")]
+///
+/// Behind the default-on `component` feature. Depending on this crate as a
+/// library from your own component? Disable it with `default-features = false`
+/// — an `export!`ed interface in a dependency is merged into the root crate's
+/// world, so leaving it on publishes `witan:gossip/gossip-protocol` as part of
+/// *your* component's surface.
+#[cfg(all(target_arch = "wasm32", feature = "component"))]
 pub mod component;
 
 /// Legacy hand-rolled C-ABI exports for `wasm32-wasip1` core-module hosts.
