@@ -28,7 +28,7 @@ use wasmtime_wasi::{WasiCtx, WasiCtxBuilder, WasiCtxView, WasiView};
 
 wasmtime::component::bindgen!({
     world: "gossip-world",
-    path: "../pqc-gossip/wit",
+    path: "../witan/wit",
 });
 
 use exports::witan::gossip::gossip_protocol::GossipError;

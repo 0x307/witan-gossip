@@ -1,5 +1,5 @@
 [package]
-name = "witan-gossip"
+name = "witan"
 version = "0.1.0"
 edition = "2021"
 description = "Post-quantum gossip protocol engine (ML-KEM-768 + ML-DSA-65) with message-level authentication, as a WASM component"
@@ -7,6 +7,11 @@ license = "Apache-2.0 OR MIT"
 repository = "https://github.com/0x307/witan-gossip"
 readme = "README.md"
 authors = ["0x307"]
+
+# Discovery on crates.io. The crate name is deliberately a bare word, so these
+# carry the search weight a "-gossip" suffix would otherwise have provided.
+keywords = ["gossip", "post-quantum", "wasm", "cryptography", "p2p"]
+categories = ["cryptography", "network-programming", "wasm"]
 
 # cargo-component metadata: declares the WIT package identity
 [package.metadata.component]
@@ -19,7 +24,7 @@ package = "witan:gossip"
 # Library target
 # ---------------------------------------------------------------------------
 [lib]
-name = "witan_gossip"
+name = "witan"
 crate-type = ["cdylib", "rlib"]
 
 # ---------------------------------------------------------------------------

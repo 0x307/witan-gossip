@@ -1,6 +1,6 @@
 # Roadmap
 
-`witan-gossip` ships today as a focused, auditable core: PQC handshake, envelope sign/verify,
+`witan` ships today as a focused, auditable core: PQC handshake, envelope sign/verify,
 dedup, quorum tracking, replay protection, and TTL enforcement, as a WASM Component with Rust/Go/
 Python/gRPC embedding paths. Here is where it's headed next — the obvious, high-value directions
 that follow naturally from that foundation.
@@ -18,7 +18,7 @@ where the crate is going.
   hand-written bindings for these languages. They had drifted from the interface they wrapped and
   have been removed — generated-and-CI-verified is the replacement, not more hand-written code.)
 - **A reference gRPC server.** Generating a service contract from the WIT interface and turning it
-  into a runnable service means *any* language with a gRPC client can talk to `witan-gossip`
+  into a runnable service means *any* language with a gRPC client can talk to `witan`
   without touching WASM at all — useful for teams that want the engine as a sidecar process rather
   than an embedded library.
 - **Conformance test vectors.** A published set of known-good handshake transcripts and envelope
@@ -38,7 +38,7 @@ where the crate is going.
   schemes, which is exactly the kind of algorithm-agility that "post-quantum by default" should
   mean in practice.
 - **Reference transport adapters, published separately.** Worked, best-practice example crates that
-  wire `witan-gossip` to common transports (a QUIC adapter, a NATS/JetStream adapter) — kept as
+  wire `witan` to common transports (a QUIC adapter, a NATS/JetStream adapter) — kept as
   separate, optional crates so the auditable core stays minimal, while integrators get a proven
   starting point instead of writing the wiring from scratch.
 - **Pluggable replay/catch-up hook.** An optional trait-like extension point so long-lived meshes
@@ -72,5 +72,5 @@ value of a small, auditable trust boundary compounds over time, and the fastest 
 keep adding "just one more feature" directly into the component that holds your private keys. The
 roadmap grows what surrounds the core; it does not grow the core.
 
-If there's a direction you need that isn't listed here, [open an issue](https://github.com/witan-gossip/witan-gossip)
+If there's a direction you need that isn't listed here, [open an issue](https://github.com/witan/witan)
 — integrator feedback is the main input to how this list gets reordered.

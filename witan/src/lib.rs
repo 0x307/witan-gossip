@@ -1,4 +1,4 @@
-//! # witan-gossip
+//! # witan
 //!
 //! Post-Quantum Cryptography Gossip Protocol WASM Component for the blockchain runtime.
 //!

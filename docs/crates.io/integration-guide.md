@@ -1,8 +1,8 @@
 # Integration Guide
 
-This guide walks through the practical patterns for embedding `witan-gossip` in a host application.
+This guide walks through the practical patterns for embedding `witan` in a host application.
 For the full function-by-function API reference, wire format, and build instructions, see the
-[crate README](../../pqc-gossip/README.md). For *why* the integration boundary looks the way it
+[crate README](../../witan/README.md). For *why* the integration boundary looks the way it
 does, see [`architecture.md`](architecture.md).
 
 ---
@@ -11,9 +11,9 @@ does, see [`architecture.md`](architecture.md).
 
 | Mode | When to use it | How |
 |---|---|---|
-| **Native Rust `rlib`** | Your host is Rust and you don't need WASM sandboxing | `witan-gossip = { version = "0.1", default-features = false }` as a normal dependency |
+| **Native Rust `rlib`** | Your host is Rust and you don't need WASM sandboxing | `witan = { version = "0.1", default-features = false }` as a normal dependency |
 | **WASM Component via `wasmtime`** | You want the sandboxing/portability guarantees, or a non-Rust host | Build with `cargo build --target wasm32-wasip2 --release`, load with `wasmtime::component` |
-| **Go / Python host** | Your host isn't Rust | Generate bindings from [the WIT interface](../../pqc-gossip/wit/gossip-protocol.wit) with `wit-bindgen-go` or `componentize-py` |
+| **Go / Python host** | Your host isn't Rust | Generate bindings from [the WIT interface](../../witan/wit/gossip-protocol.wit) with `wit-bindgen-go` or `componentize-py` |
 | **gRPC / Protobuf proxy** | You want a language-agnostic network boundary instead of embedding WASM directly | Generate a service contract from the WIT interface and front the engine with a small gRPC server |
 
 > **Note on the `rlib` row:** `default-features = false` turns off the `component` feature. You want
@@ -26,12 +26,12 @@ does, see [`architecture.md`](architecture.md).
 
 ```toml
 [dependencies]
-witan-gossip = "0.1"
+witan = "0.1"
 ```
 
 ```rust
-use witan_gossip::{gossip_init, gossip_publish, gossip_encode_envelope, gossip_verify_envelope};
-use witan_gossip::types::PayloadType;
+use witan::{gossip_init, gossip_publish, gossip_encode_envelope, gossip_verify_envelope};
+use witan::types::PayloadType;
 
 gossip_init(r#"{"mesh_n": 6, "default_ttl": 5}"#)?;
 let msg_id = gossip_publish(PayloadType::Transaction as u8, b"tx-bytes")?;
@@ -55,7 +55,7 @@ let mut config = Config::new();
 config.wasm_component_model(true);
 let engine = Engine::new(&config)?;
 
-let component = Component::from_file(&engine, "witan_gossip.wasm")?;
+let component = Component::from_file(&engine, "witan.wasm")?;
 let wasi = WasiCtxBuilder::new().build();
 let mut store = Store::new(&engine, wasi);
 
@@ -79,15 +79,15 @@ handshake and gossip exchange, which is a good template for your own integration
 ## 4. Non-Rust hosts (Go, Python)
 
 The component is a standard WASM Component, so Go and Python hosts generate their bindings from the
-same [`wit/gossip-protocol.wit`](../../pqc-gossip/wit/gossip-protocol.wit) the Rust guest is
+same [`wit/gossip-protocol.wit`](../../witan/wit/gossip-protocol.wit) the Rust guest is
 generated from:
 
 ```bash
 # Go
-wit-bindgen-go generate --world gossip-world pqc-gossip/wit
+wit-bindgen-go generate --world gossip-world witan/wit
 
 # Python
-componentize-py --wit-path pqc-gossip/wit --world gossip-world bindings .
+componentize-py --wit-path witan/wit --world gossip-world bindings .
 ```
 
 Drive the resulting bindings with your language's `wasmtime` runtime the same way the Rust host in
@@ -104,7 +104,7 @@ examples are on the roadmap.
 
 ## 5. Pairing with a transport
 
-`witan-gossip` never touches the network. You drive it with three kinds of calls:
+`witan` never touches the network. You drive it with three kinds of calls:
 
 1. **Handshake bytes** — `gossip_connect_peer` / `gossip_process_handshake_bytes` /
    `gossip_build_handshake_ack` / `gossip_build_finish_ack` — produce and consume the 4-message PQC
@@ -144,7 +144,7 @@ if gossip_verify_envelope(&msg.payload)? {
 }
 ```
 
-NATS (or any pub/sub broker) handles the "who gets this message" fan-out question. `witan-gossip`
+NATS (or any pub/sub broker) handles the "who gets this message" fan-out question. `witan`
 handles the "can I trust this message" question. Neither call site changes if you later swap the
 broker for raw QUIC, or vice versa — see [`architecture.md`](architecture.md) for why that's the
 point of the boundary.
@@ -206,7 +206,7 @@ match gossip_verify_envelope(&bytes) {
     Ok(false) => { /* malformed but not an error variant — treat as untrusted */ }
     Err(GossipError::ReplayDetected) => { /* drop, maybe log as a metric */ }
     Err(GossipError::SignatureInvalid) => { /* drop, consider peer scoring */ }
-    Err(e) => { /* other error — see the full taxonomy in pqc-gossip/src/error.rs */ }
+    Err(e) => { /* other error — see the full taxonomy in witan/src/error.rs */ }
 }
 ```
 
@@ -216,8 +216,8 @@ match gossip_verify_envelope(&bytes) {
 
 - Reuse the [`wasmtime-test`](../../wasmtime-test/) harness pattern as a starting point for a
   multi-node, in-process integration test.
-- The crate's own [integration test suite](../../pqc-gossip/tests/integration_tests.rs) is a good
+- The crate's own [integration test suite](../../witan/tests/integration_tests.rs) is a good
   reference for exercising handshake, envelope, dedup, and quorum logic in isolation.
 - If you're pairing with a real transport (QUIC/TCP/NATS), write a small "loopback" test first:
-  one process, two `witan-gossip` instances, bytes copied directly between them with no network —
+  one process, two `witan` instances, bytes copied directly between them with no network —
   this isolates transport bugs from protocol bugs.

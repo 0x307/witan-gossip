@@ -1,22 +1,22 @@
-# witan-gossip
+# witan
 
 **The post-quantum-native gossip protocol engine for blockchains and mesh networks.**
 
-[![Crates.io](https://img.shields.io/crates/v/witan-gossip.svg)](https://crates.io/crates/witan-gossip)
-[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](../../pqc-gossip/README.md#license)
+[![Crates.io](https://img.shields.io/crates/v/witan.svg)](https://crates.io/crates/witan)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](../../witan/README.md#license)
 [![WASM Component](https://img.shields.io/badge/target-wasm32--unknown--unknown-orange.svg)](https://webassembly.org/)
 [![FIPS 203](https://img.shields.io/badge/FIPS-203%20ML--KEM--768-green.svg)](https://csrc.nist.gov/pubs/fips/203/final)
 [![FIPS 204](https://img.shields.io/badge/FIPS-204%20ML--DSA--65-green.svg)](https://csrc.nist.gov/pubs/fips/204/final)
 
 > This document is the extended, narrative companion to the crate's published
-> [`README`](../../pqc-gossip/README.md). Read this first for the *why*; read the crate README for the
+> [`README`](../../witan/README.md). Read this first for the *why*; read the crate README for the
 > *exact API*.
 
 ---
 
 ## The one-sentence pitch
 
-`witan-gossip` is a small, auditable, **WASM Component Model** engine that gives every message in your
+`witan` is a small, auditable, **WASM Component Model** engine that gives every message in your
 gossip mesh its own **quantum-resistant cryptographic identity** — ML-KEM-768 + X25519 hybrid key
 exchange (FIPS 203) and ML-DSA-65 signatures (FIPS 204) — so that authenticity and freshness survive
 *no matter how many hops, relays, or brokers the message passes through*, while leaving transport
@@ -32,7 +32,7 @@ hybrid-PQC variants) protects data *in transit between two directly connected pe
 message is relayed, rebroadcast, or forwarded through a message broker, that protection is gone: the
 next hop is a new TLS session trusting whatever the previous hop handed it.
 
-`witan-gossip` signs the **envelope itself**, not the pipe:
+`witan` signs the **envelope itself**, not the pipe:
 
 ```
 GossipEnvelope {
@@ -68,7 +68,7 @@ Combine that with:
 
 ---
 
-## What `witan-gossip` is — and is not
+## What `witan` is — and is not
 
 | It IS | It is NOT |
 |---|---|
@@ -92,23 +92,23 @@ Combine that with:
 │                     │                           ▲                  │
 │                     ▼  WIT / ABI calls          │ response bytes   │
 │   ┌──────────────────────────────────────────────────────────┐     │
-│   │            witan-gossip (WASM component)                 │     │
+│   │            witan (WASM component)                 │     │
 │   │   PQC handshake · envelope sign/verify · dedup ·         │     │
 │   │   quorum tracking · replay protection · TTL              │     │
 │   └──────────────────────────────────────────────────────────┘     │
 └────────────────────────────────────────────────────────────────────┘
 ```
 
-The host owns **delivery**. `witan-gossip` owns **trust**. Neither layer needs to know how the other
+The host owns **delivery**. `witan` owns **trust**. Neither layer needs to know how the other
 works internally — that boundary is the whole point. See
 [`architecture.md`](architecture.md) for the full rationale, and the honest list of challenges that
 this abstraction introduces.
 
 ---
 
-## `witan-gossip` alone vs. a transport/messaging layer (e.g. NATS / erend-nats)
+## `witan` alone vs. a transport/messaging layer (e.g. NATS / erend-nats)
 
-| Capability | `witan-gossip` provides | A transport/messaging layer provides |
+| Capability | `witan` provides | A transport/messaging layer provides |
 |---|---|---|
 | Node identity (KEM + SIG keypairs) | ✅ | — |
 | Mutual PQC handshake & session establishment | ✅ | — |
@@ -123,7 +123,7 @@ this abstraction introduces.
 | Durable persistence / replay of missed messages | — | ✅ (e.g. JetStream-style streams) |
 | Subject/topic-based filtering & clustering | — | ✅ |
 
-Neither layer is a substitute for the other. `witan-gossip` gives every message a cryptographic
+Neither layer is a substitute for the other. `witan` gives every message a cryptographic
 identity that outlives any single hop; the transport gets the bytes there. Pair them and you get
 epidemic broadcast with end-to-end, quantum-resistant authenticity — something neither layer
 provides alone.
@@ -133,7 +133,7 @@ provides alone.
 ## Quick start
 
 ```rust
-use witan_gossip::{gossip_init, gossip_encode_envelope, gossip_verify_envelope, types::PayloadType};
+use witan::{gossip_init, gossip_encode_envelope, gossip_verify_envelope, types::PayloadType};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     gossip_init("{}")?; // defaults: mesh_n=8, ttl=8, quorum_fraction=0.67, ...
@@ -147,7 +147,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 ```
 
 For the complete API reference, WIT interface, wire format, handshake sequence diagrams, and build
-instructions, see the [crate README](../../pqc-gossip/README.md).
+instructions, see the [crate README](../../witan/README.md).
 
 ---
 
@@ -159,7 +159,7 @@ instructions, see the [crate README](../../pqc-gossip/README.md).
 | [`architecture.md`](architecture.md) | Why the layers are split this way, what each side owns, honest risks |
 | [`integration-guide.md`](integration-guide.md) | Worked integration patterns: native Rust, WASM host, NATS pairing, test harness |
 | [`extending-customizing.md`](extending-customizing.md) | Extension points that exist today, and how to build on them |
-| [`comparison.md`](comparison.md) | How `witan-gossip` stacks up against libp2p, Tendermint P2P, and raw NATS |
+| [`comparison.md`](comparison.md) | How `witan` stacks up against libp2p, Tendermint P2P, and raw NATS |
 | [`roadmap.md`](roadmap.md) | What's coming next |
 | [`about.md`](about.md) | Where the names "Witan" and "Erend" come from |
 

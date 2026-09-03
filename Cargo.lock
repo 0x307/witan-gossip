@@ -3730,7 +3730,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "witan-gossip"
+name = "witan"
 version = "0.1.0"
 dependencies = [
  "bincode",

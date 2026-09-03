@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "pqc-gossip",     # WASM component crate (witan-gossip)
+    "witan",     # WASM component crate (witan)
     "wasmtime-test",  # multi-instance wasmtime test harness
 ]
 resolver = "2"
@@ -10,7 +10,7 @@ resolver = "2"
 #
 # These must live at the workspace root: cargo ignores `[profile.*]` declared
 # in a member package and warns about it, which is what happened while these
-# settings sat in pqc-gossip/Cargo.toml — the size options below were being
+# settings sat in witan/Cargo.toml — the size options below were being
 # documented but not applied.
 # ---------------------------------------------------------------------------
 [profile.release]

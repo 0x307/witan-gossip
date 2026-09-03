@@ -1,6 +1,6 @@
-# Extending & Customizing `witan-gossip`
+# Extending & Customizing `witan`
 
-`witan-gossip` is deliberately a small core. Rather than growing a large plugin-trait surface inside
+`witan` is deliberately a small core. Rather than growing a large plugin-trait surface inside
 the crypto-critical WASM component, extensibility is designed around **stable, versioned interfaces
 at the edges** — the WIT world, the config schema, and the wire format — so you can build richer
 behavior in the host without ever needing to fork or patch the core.
@@ -69,7 +69,7 @@ verification primitive the gossip engine uses internally, exposed as a building 
 
 The `PayloadType` enum (`Transaction`, `BlockProposal`, `FinalityVote`, `StateSync`,
 `PeerDiscovery`) is a routing/priority hint, not a schema constraint. The `payload: Vec<u8>` field
-is opaque to `witan-gossip` — put whatever your application needs inside it (protobuf, bincode,
+is opaque to `witan` — put whatever your application needs inside it (protobuf, bincode,
 JSON, a custom binary format). Most integrations get everything they need from the five built-in
 variants:
 
@@ -95,7 +95,7 @@ ship a first-party binding:
 - **Any Component Model host** — instantiate the `.wasm` via `wasmtime` (or another
   Component-Model-compatible runtime) and call the WIT functions directly.
 - **Go / Python** — generate bindings from
-  [the WIT interface](../../pqc-gossip/wit/gossip-protocol.wit) with `wit-bindgen-go` or
+  [the WIT interface](../../witan/wit/gossip-protocol.wit) with `wit-bindgen-go` or
   `componentize-py`. Generating from the interface is the point: hand-written bindings drift from
   the API they wrap, and a binding that has drifted from a cryptographic interface is worse than no
   binding at all.
@@ -111,7 +111,7 @@ for teams that don't want a WASM runtime dependency inside their main service.
 
 ## 6. Bring your own transport (the big one)
 
-As covered in [`architecture.md`](architecture.md), `witan-gossip` never touches the network. This
+As covered in [`architecture.md`](architecture.md), `witan` never touches the network. This
 is itself the primary extension point: you are free to pair the engine with:
 
 - Raw QUIC or TCP sockets you manage yourself.
@@ -130,7 +130,7 @@ never touches the cryptographic core, and never requires re-validating the PQC l
 Many teams integrating a gossip engine into a larger blockchain runtime find it useful to define
 their *own* small trait/interface layer in their host code — e.g., something that maps their
 transaction batch format to `gossip_publish` calls, or routes `gossip_get_stats()` output into their
-existing metrics pipeline. `witan-gossip` intentionally stays out of prescribing that shape: it's
+existing metrics pipeline. `witan` intentionally stays out of prescribing that shape: it's
 your host's composition root, and it should reflect your chain's types and conventions, not ours.
 The stable surface you compose against is the WIT/ABI function list — everything above it is yours
 to design.
@@ -156,8 +156,8 @@ A few things are fixed by design, because they are safety properties, not limita
 
 ## 9. Testing extension points
 
-Whatever you build on top of `witan-gossip`, the
-[integration test suite](../../pqc-gossip/tests/integration_tests.rs) and the
+Whatever you build on top of `witan`, the
+[integration test suite](../../witan/tests/integration_tests.rs) and the
 [`wasmtime-test`](../../wasmtime-test/) multi-node harness are good templates for validating your own
 extensions — both demonstrate driving the full handshake and gossip lifecycle without a live network,
 which is the fastest way to get deterministic coverage of your integration code.

@@ -1,11 +1,11 @@
-# Witan-Gossip
+# Witan
 
 A post-quantum cryptography (PQC) gossip protocol engine, compiled as a
 [WASM Component Model](https://component-model.bytecodealliance.org/) component. It provides
 epidemic broadcast messaging with quantum-resistant cryptographic guarantees for
 validator-to-validator communication in a blockchain validator mesh.
 
-**`witan-gossip` is self-contained and useful on its own.** It has no required companions: it takes
+**`witan` is self-contained and useful on its own.** It has no required companions: it takes
 bytes in and gives bytes out, so any host that can move bytes — QUIC, TCP, WebTransport, a message
 broker, or your own transport — can drive it. Everything below is optional context, not a dependency
 list.
@@ -18,7 +18,7 @@ clear ownership boundary. You can adopt this one without the other two.
 | Runtime | Role | Status |
 |---|---|---|
 | **Blockchain Runtime** | Owns consensus, block production, and state machine logic. Calls into the Gossip Runtime to publish messages and receive validated gossip. Has no direct network access. | Not yet published |
-| **Gossip Protocol Runtime** (this repo) | Owns all PQC cryptographic operations and gossip protocol logic. Validates incoming bytes and delivers verified messages to the host. | `witan-gossip` — this crate |
+| **Gossip Protocol Runtime** (this repo) | Owns all PQC cryptographic operations and gossip protocol logic. Validates incoming bytes and delivers verified messages to the host. | `witan` — this crate |
 | **Erend-NATS Runtime** | Wraps `async-nats` client functionality. Owns subject routing, JetStream consumer management, and NATS cluster connectivity. | Not yet published |
 
 The split is the point: transport concerns and cryptographic concerns evolve on different timelines,
@@ -28,7 +28,7 @@ an honest account of the risks the split introduces.
 
 ## What's in this repo
 
-- [`pqc-gossip/`](pqc-gossip/) — the `witan-gossip` crate: a WASM component implementing the PQC
+- [`witan/`](witan/) — the `witan` crate: a WASM component implementing the PQC
   gossip protocol (ML-KEM-768 + X25519 hybrid handshake, ML-DSA-65 signatures, envelope
   sign/verify, deduplication, BFT quorum tracking, replay protection, TTL hop-count management).
   This is the crate published to crates.io.
@@ -36,7 +36,7 @@ an honest account of the risks the split introduces.
   3-node gossip mesh entirely in-process, driving the compiled WASM component the same way a
   host blockchain runtime would.
 - [`docs/crates.io/`](docs/crates.io/) — the public documentation set: an extended README, the
-  architecture/layering rationale (`witan-gossip` vs. transport layers like QUIC/TCP/NATS), an
+  architecture/layering rationale (`witan` vs. transport layers like QUIC/TCP/NATS), an
   integration guide, extension points, a competitive comparison, and the roadmap.
 
 
@@ -49,47 +49,47 @@ an honest account of the risks the split introduces.
 - Replay protection (±30s window)
 - TTL hop count management
 
-See [`pqc-gossip/README.md`](pqc-gossip/README.md) for the full crate documentation, WIT
+See [`witan/README.md`](witan/README.md) for the full crate documentation, WIT
 interface, build instructions, and API reference.
 
 ## Building
 
 ```bash
 # Build the native rlib (tests, tooling)
-cargo build -p witan-gossip
+cargo build -p witan
 
 # Build the WASM component
 rustup target add wasm32-wasip2
-cargo build -p witan-gossip --target wasm32-wasip2 --release
+cargo build -p witan --target wasm32-wasip2 --release
 
 # Run the in-process 3-node integration harness against the built component
-cargo run -p wasmtime-test -- target/wasm32-wasip2/release/witan_gossip.wasm
+cargo run -p wasmtime-test -- target/wasm32-wasip2/release/witan.wasm
 ```
 
 `wasm32-wasip2` emits a WASM Component directly — no post-processing step.
 Inspect the artifact and its interface with:
 
 ```bash
-wasm-tools component wit target/wasm32-wasip2/release/witan_gossip.wasm
+wasm-tools component wit target/wasm32-wasip2/release/witan.wasm
 ```
 
-`cargo component build -p witan-gossip --release` also works and produces an
+`cargo component build -p witan --release` also works and produces an
 equivalent component via `wasm32-wasip1` plus an adapter. Both paths are covered
 in CI.
 
 ### Consuming this crate as a library
 
 The component export is emitted by an `export!` macro, and a dependency's
-exports are merged into the root crate's world. If you depend on `witan-gossip`
+exports are merged into the root crate's world. If you depend on `witan`
 from your own wasm component, disable the default `component` feature so its
 interface doesn't become part of *your* component's public surface:
 
 ```toml
-witan-gossip = { version = "0.1", default-features = false }
+witan = { version = "0.1", default-features = false }
 ```
 
 The full Rust API stays available either way. See
-[`pqc-gossip/README.md`](pqc-gossip/README.md#depending-on-this-crate-from-your-own-component).
+[`witan/README.md`](witan/README.md#depending-on-this-crate-from-your-own-component).
 
 ### Deprecated: legacy C-ABI
 
@@ -99,7 +99,7 @@ an off-by-default feature for consumers who already integrated against it, and i
 scheduled for removal in a future release:
 
 ```bash
-cargo build -p witan-gossip --target wasm32-wasip1 --release --features wasi-abi
+cargo build -p witan --target wasm32-wasip1 --release --features wasi-abi
 ```
 
 New integrations should use the component interface, which needs no feature flag
@@ -112,7 +112,7 @@ at runtime.
 ## Testing
 
 ```bash
-cargo test -p witan-gossip
+cargo test -p witan
 ```
 
 ## License

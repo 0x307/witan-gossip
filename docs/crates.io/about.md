@@ -7,7 +7,7 @@ Witan — the Anglo-Saxon council that convened, circulated what each member kne
 See also:
 
 - [`README.md`](README.md) — the pitch, the layering model, quick start
-- [`architecture.md`](architecture.md) — why witan-gossip and transport (e.g. Erend/NATS) are split apart
+- [`architecture.md`](architecture.md) — why witan and transport (e.g. Erend/NATS) are split apart
 - [`integration-guide.md`](integration-guide.md) — worked integration patterns
 - [`extending-customizing.md`](extending-customizing.md) — extension points
 - [`comparison.md`](comparison.md) — how this compares to libp2p, Tendermint P2P, and NATS

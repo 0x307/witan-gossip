@@ -1,4 +1,4 @@
-//! Multi-instance wasmtime test harness for `witan-gossip`.
+//! Multi-instance wasmtime test harness for `witan`.
 //!
 //! Runs a 3-node gossip mesh entirely in-process using wasmtime.
 //! Each node is an independent WASM instance with isolated linear memory.
@@ -6,13 +6,13 @@
 //! # Build the WASI binary first
 //!
 //! ```sh
-//! cargo build -p witan-gossip --target wasm32-wasip1 --release
+//! cargo build -p witan --target wasm32-wasip1 --release
 //! ```
 //!
 //! # Run the test
 //!
 //! ```sh
-//! cargo run -p wasmtime-test -- target/wasm32-wasip1/release/witan_gossip.wasm
+//! cargo run -p wasmtime-test -- target/wasm32-wasip1/release/witan.wasm
 //! ```
 //!
 //! # Handshake protocol (host-driven I/O model)
@@ -111,9 +111,9 @@ fn main() -> Result<()> {
         eprintln!("Usage: {} <path-to-wasm>", args[0]);
         eprintln!();
         eprintln!("Build the WASI binary first:");
-        eprintln!("  cargo build -p witan-gossip --target wasm32-wasip1 --release");
+        eprintln!("  cargo build -p witan --target wasm32-wasip1 --release");
         eprintln!("Then run:");
-        eprintln!("  cargo run -p wasmtime-test -- target/wasm32-wasip1/release/witan_gossip.wasm");
+        eprintln!("  cargo run -p wasmtime-test -- target/wasm32-wasip1/release/witan.wasm");
         std::process::exit(1);
     }
 
@@ -128,7 +128,7 @@ fn main() -> Result<()> {
 
     println!();
     println!("══════════════════════════════════════════════════════════");
-    println!("  witan-gossip  ·  3-node wasmtime integration test");
+    println!("  witan  ·  3-node wasmtime integration test");
     println!("══════════════════════════════════════════════════════════");
     println!();
 

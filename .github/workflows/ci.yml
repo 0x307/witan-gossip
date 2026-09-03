@@ -12,8 +12,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo build -p witan-gossip
-      - run: cargo test -p witan-gossip
+      - run: cargo build -p witan
+      - run: cargo test -p witan
 
   # The component build and the downstream consumer that drives it. This is the
   # job that proves the WASM Component Model claim: a crate that builds is not
@@ -28,18 +28,18 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: wasm-tools
-      - run: cargo build -p witan-gossip --target wasm32-wasip2 --release
+      - run: cargo build -p witan --target wasm32-wasip2 --release
 
       - name: artifact is a valid component
-        run: wasm-tools validate --features all target/wasm32-wasip2/release/witan_gossip.wasm
+        run: wasm-tools validate --features all target/wasm32-wasip2/release/witan.wasm
 
       - name: component exports the gossip interface
         run: |
-          wasm-tools component wit target/wasm32-wasip2/release/witan_gossip.wasm \
+          wasm-tools component wit target/wasm32-wasip2/release/witan.wasm \
             | grep -q 'export witan:gossip/gossip-protocol@0.1.0;'
 
       - name: downstream-consumer check (3-node wasmtime mesh)
-        run: cargo run -p wasmtime-test -- target/wasm32-wasip2/release/witan_gossip.wasm
+        run: cargo run -p wasmtime-test -- target/wasm32-wasip2/release/witan.wasm
 
       # The `component` feature is what library consumers turn off to keep this
       # crate's export out of their own component's world. Assert the export is
@@ -48,8 +48,8 @@ jobs:
       - name: --no-default-features drops the export
         run: |
           set -euo pipefail
-          cargo build -p witan-gossip --target wasm32-wasip2 --release --no-default-features
-          if wasm-tools component wit target/wasm32-wasip2/release/witan_gossip.wasm \
+          cargo build -p witan --target wasm32-wasip2 --release --no-default-features
+          if wasm-tools component wit target/wasm32-wasip2/release/witan.wasm \
                | grep -q 'export witan:gossip/gossip-protocol'; then
             echo "component feature is off but the interface is still exported"
             exit 1
@@ -67,11 +67,11 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-component,wasm-tools
-      - run: cargo component build -p witan-gossip --release
+      - run: cargo component build -p witan --release
       - name: adapter output is also a valid component with the same export
         run: |
-          wasm-tools validate --features all target/wasm32-wasip1/release/witan_gossip.wasm
-          wasm-tools component wit target/wasm32-wasip1/release/witan_gossip.wasm \
+          wasm-tools validate --features all target/wasm32-wasip1/release/witan.wasm
+          wasm-tools component wit target/wasm32-wasip1/release/witan.wasm \
             | grep -q 'export witan:gossip/gossip-protocol@0.1.0;'
 
   # The deprecated C-ABI surface. Kept in CI so it cannot rot silently while it
@@ -85,16 +85,16 @@ jobs:
           targets: wasm32-wasip1
       # --no-default-features isolates the deprecated surface: the legacy C-ABI
       # on its own, without the component export also being compiled in.
-      - run: cargo build -p witan-gossip --target wasm32-wasip1 --release --no-default-features --features wasi-abi
+      - run: cargo build -p witan --target wasm32-wasip1 --release --no-default-features --features wasi-abi
       # And alongside the component export, which is how it actually ships.
-      - run: cargo build -p witan-gossip --target wasm32-wasip1 --release --features wasi-abi
+      - run: cargo build -p witan --target wasm32-wasip1 --release --features wasi-abi
 
   dry-run-publish:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo publish -p witan-gossip --dry-run
+      - run: cargo publish -p witan --dry-run
 
   # Build the PACKAGED crate — the exact bytes that go to crates.io — for
   # wasm32-wasip2, outside the workspace, the way a consumer gets it.
@@ -117,12 +117,12 @@ jobs:
           tool: wasm-tools
 
       - name: package the crate
-        run: cargo package -p witan-gossip
+        run: cargo package -p witan
 
       - name: build the packaged crate for wasm32-wasip2
         run: |
           set -euo pipefail
-          pkg="$(find target/package -maxdepth 1 -type d -name 'witan-gossip-*' | head -1)"
+          pkg="$(find target/package -maxdepth 1 -type d -name 'witan-*' | head -1)"
           test -n "$pkg" || { echo "no packaged crate directory found"; exit 1; }
           echo "building packaged crate at $pkg"
           test -f "$pkg/wit/gossip-protocol.wit" \
@@ -133,8 +133,8 @@ jobs:
       - name: packaged artifact is a component exporting the interface
         run: |
           set -euo pipefail
-          pkg="$(find target/package -maxdepth 1 -type d -name 'witan-gossip-*' | head -1)"
-          artifact="$pkg/target/wasm32-wasip2/release/witan_gossip.wasm"
+          pkg="$(find target/package -maxdepth 1 -type d -name 'witan-*' | head -1)"
+          artifact="$pkg/target/wasm32-wasip2/release/witan.wasm"
           wasm-tools validate --features all "$artifact"
           wasm-tools component wit "$artifact" \
             | grep -q 'export witan:gossip/gossip-protocol@0.1.0;'

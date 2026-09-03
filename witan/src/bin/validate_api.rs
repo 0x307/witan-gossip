@@ -1,7 +1,7 @@
-//! API endpoint validation binary for witan-gossip
-//! Run with: cargo run -p witan-gossip --bin validate_api
+//! API endpoint validation binary for witan
+//! Run with: cargo run -p witan --bin validate_api
 
-use witan_gossip::{
+use witan::{
     gossip_decode_envelope, gossip_encode_envelope, gossip_get_node_identity, gossip_get_peers,
     gossip_get_session, gossip_get_stats, gossip_get_version, gossip_init,
     gossip_process_handshake_bytes, gossip_publish, gossip_rotate_keys, gossip_verify_envelope,
@@ -23,7 +23,7 @@ fn fail(n: usize, msg: &str, failed: &mut usize) {
 }
 
 fn main() {
-    println!("=== witan-gossip API Validation ===\n");
+    println!("=== witan API Validation ===\n");
 
     let mut passed = 0usize;
     let mut failed = 0usize;
@@ -269,7 +269,7 @@ fn main() {
     // ── Test 15: gossip_create_handshake_init (gossip_connect_peer probe) ─────
     println!("[TEST 15] gossip_create_handshake_init (via gossip_connect_peer)...");
     let probe_bytes_for_16 = {
-        use witan_gossip::gossip_connect_peer;
+        use witan::gossip_connect_peer;
         match gossip_connect_peer("test-peer-15:9000") {
             Ok(probe_bytes) => {
                 if !probe_bytes.is_empty() {
@@ -301,7 +301,7 @@ fn main() {
             // We use HandshakeManager directly since we can't call gossip_init again
             let server_identity = NodeIdentity::generate("test").expect("server identity failed");
             let mut server_hs = HandshakeManager::new();
-            let now_ms = witan_gossip::current_time_unix_ms();
+            let now_ms = witan::current_time_unix_ms();
             match server_hs.process_incoming("test-peer-15:9000", &probe_bytes_for_16, &server_identity, now_ms) {
                 Ok(ack_bytes) => {
                     if !ack_bytes.is_empty() {
@@ -331,9 +331,9 @@ fn main() {
         let bob = NodeIdentity::generate("test").expect("bob identity failed");
         let mut alice_hs = HandshakeManager::new();
         let mut bob_hs = HandshakeManager::new();
-        let now_ms = witan_gossip::current_time_unix_ms();
+        let now_ms = witan::current_time_unix_ms();
 
-        let result = (|| -> Result<(), witan_gossip::GossipError> {
+        let result = (|| -> Result<(), witan::GossipError> {
             // Step 1: Alice → Bob: probe
             let probe = alice_hs.create_identity_probe("bob", &alice)?;
 
@@ -404,8 +404,8 @@ fn main() {
     println!("[TEST 18] gossip_get_session (no session for unknown peer)...");
     {
         match gossip_get_session("nonexistent-peer:9999") {
-            Err(witan_gossip::GossipError::SessionNotFound(_))
-            | Err(witan_gossip::GossipError::PeerNotFound(_)) => {
+            Err(witan::GossipError::SessionNotFound(_))
+            | Err(witan::GossipError::PeerNotFound(_)) => {
                 pass(18, "SessionNotFound/PeerNotFound returned for unknown peer", &mut passed)
             }
             Ok(json) => {
