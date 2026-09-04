@@ -96,6 +96,21 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo publish -p witan --dry-run
 
+  # LICENSE/NOTICE/SECURITY exist twice on purpose: once at the repo root for
+  # GitHub, once inside witan/ so they travel in the published .crate — cargo
+  # cannot include files from outside the package directory, and Apache-2.0
+  # §4(d) expects NOTICE to ship with the work. Duplicates drift silently, so
+  # assert they match.
+  duplicated-legal-files-match:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          set -euo pipefail
+          for f in LICENSE-APACHE LICENSE-MIT NOTICE SECURITY.md; do
+            diff -q "$f" "witan/$f" || { echo "$f differs between repo root and witan/"; exit 1; }
+          done
+
   # Build the PACKAGED crate — the exact bytes that go to crates.io — for
   # wasm32-wasip2, outside the workspace, the way a consumer gets it.
   #
