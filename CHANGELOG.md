@@ -9,11 +9,34 @@ document for what counts as breaking inside `0.x`.
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-09-04
+
 ### Added
 
 - Program artifacts: `SECURITY.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `STABILITY.md`,
-  `NOTICE`, issue templates, and a `cargo-deny` workflow.
-- Named maintainer recorded in `Cargo.toml`.
+  `NOTICE`, `PROVENANCE.md`, issue templates, and a `cargo-deny` workflow, run in CI weekly
+  and on every push.
+- Named maintainer recorded in `Cargo.toml` (Ed Johnson); Ken credited as original author.
+- `LICENSE-APACHE`, `LICENSE-MIT`, `NOTICE`, and `SECURITY.md` now also ship inside the
+  published package (`witan/`), not only at the repo root — `cargo package` cannot include
+  files from outside the package directory, so the 0.1.0 `.crate` shipped without them.
+
+### Removed
+
+- **Breaking:** the `native-transport` feature and its four dependencies (`quinn`, `rustls`,
+  `rcgen`, `tokio`) — dead code, referenced nowhere in `src/` or `tests/`. If you depended on
+  `witan` with `features = ["native-transport"]`, that feature no longer exists; nothing in
+  this crate ever used it, so there is no migration — drop the feature from your
+  `Cargo.toml`.
+
+### Fixed
+
+- `rand` updated 0.8.5 → 0.8.8, resolving a RUSTSEC advisory for undefined behavior in
+  `ThreadRng` (this crate uses `OsRng`, not the affected path, but a PQC crate should not
+  carry a flagged RNG regardless).
+- Removing `native-transport` also resolved a `cargo-deny` license rejection
+  (`CDLA-Permissive-2.0`, pulled in transitively by `quinn`).
+- `wasmtime-test` (dev-only, not published) was missing a `license` field.
 
 ## [0.1.0] — 2026-09-04
 
