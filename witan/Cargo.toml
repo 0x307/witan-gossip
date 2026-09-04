@@ -1,6 +1,6 @@
 [package]
 name = "witan"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "Post-quantum gossip protocol engine (ML-KEM-768 + ML-DSA-65) with message-level authentication, as a WASM component"
 license = "Apache-2.0 OR MIT"
