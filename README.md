@@ -52,6 +52,40 @@ an honest account of the risks the split introduces.
 See [`witan/README.md`](witan/README.md) for the full crate documentation, WIT
 interface, build instructions, and API reference.
 
+## What runs today vs. what is designed
+
+**Runs today, and is exercised in CI on every push:**
+
+- The native Rust library, with 10 integration tests covering identity generation and
+  derivation from seeds, ML-DSA-65 sign/verify, envelope round-trip, replay detection, the
+  dedup cache, the quorum tracker, the full 4-message handshake, and config validation.
+- The `wasm32-wasip2` build, emitting a WASM Component that exports
+  `witan:gossip/gossip-protocol@0.1.0`. CI asserts the export exists on the built artifact.
+- A 3-node in-process `wasmtime` mesh driving the component through mutual handshakes,
+  envelope signing, cross-node verification, and disconnect.
+- `cargo component build` as an equivalent path via `wasm32-wasip1` plus an adapter.
+- The deprecated `wasi-abi` C-ABI surface, built both in isolation and alongside the
+  component export.
+- The published crate itself: CI packages it and rebuilds those exact bytes for
+  `wasm32-wasip2`, because a native-only `--dry-run` cannot see code behind a `cfg`.
+
+**Designed, or deliberately left to the host:**
+
+- **Fan-out and mesh membership are the host's job.** This crate tracks sessions it is told
+  about and exposes `mesh_n` / `mesh_n_low` / `mesh_n_high` as guidance; deciding which peers a
+  message goes to, and actually sending it, happens outside the component.
+- **Quorum tracking counts acknowledgements you feed it.** It does not collect them.
+- **Mesh graft/prune during `heartbeat()` is implemented but not covered by a multi-node test.**
+  The 3-node harness exercises handshake and messaging, not mesh convergence under churn.
+- **TTL is enforced on verify, not decremented on forward** — forwarding is host-side, so
+  decrementing before rebroadcast is the host's responsibility.
+- **No third-party security audit.** See [`SECURITY.md`](SECURITY.md) and
+  [`STABILITY.md`](STABILITY.md).
+- **Go and Python bindings are generatable but not shipped** as first-party worked examples,
+  and no `.proto` ships for the gRPC path. See
+  [`docs/crates.io/roadmap.md`](docs/crates.io/roadmap.md).
+- **The two sibling runtimes** in the table above are not published.
+
 ## Building
 
 ```bash

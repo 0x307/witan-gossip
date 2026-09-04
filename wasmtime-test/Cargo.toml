@@ -3,6 +3,9 @@ name = "wasmtime-test"
 version = "0.1.0"
 edition = "2021"
 description = "Multi-instance wasmtime test harness for witan"
+license = "Apache-2.0 OR MIT"
+# In-repo test harness, not a published artifact.
+publish = false
 
 [[bin]]
 name = "gossip-node-test"

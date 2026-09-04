@@ -6,7 +6,11 @@ description = "Post-quantum gossip protocol engine (ML-KEM-768 + ML-DSA-65) with
 license = "Apache-2.0 OR MIT"
 repository = "https://github.com/0x307/witan-gossip"
 readme = "README.md"
-authors = ["0x307"]
+
+# 0x307 Inc. owns the work; Ken is the original author; Ed Johnson is the named
+# maintainer and the human behind security@0x307.com for this repo. See NOTICE
+# for the provenance statement and SECURITY.md for the response window.
+authors = ["Ken (original author)", "Ed Johnson <security@0x307.com> (maintainer)"]
 
 # Discovery on crates.io. The crate name is deliberately a bare word, so these
 # carry the search weight a "-gossip" suffix would otherwise have provided.
@@ -86,24 +90,12 @@ getrandom = { version = "0.2" }
 wit-bindgen = { version = "0.61", optional = true }
 
 # ---------------------------------------------------------------------------
-# Native-only dependencies (integration tests, benchmarks)
+# Native-only dependencies
 # ---------------------------------------------------------------------------
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 
 # getrandom uses OS entropy automatically on native
 getrandom = { version = "0.2" }
-
-# QUIC transport for native integration tests
-quinn = { version = "0.11", optional = true }
-
-# TLS for QUIC (native only)
-rustls = { version = "0.23", default-features = false, features = ["ring", "std"], optional = true }
-
-# Self-signed cert generation for test QUIC endpoints
-rcgen = { version = "0.14", optional = true }
-
-# Async runtime for native integration tests
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "io-util", "net"], optional = true }
 
 # ---------------------------------------------------------------------------
 # Dev dependencies (tests only, native)
@@ -140,9 +132,6 @@ component = ["dep:wit-bindgen"]
 # consumers that integrated against the raw ptr/len ABI before the component
 # export existed; scheduled for removal in a future release (CRA ticket).
 wasi-abi = []
-
-# Enable native QUIC/TCP transport for integration tests
-native-transport = ["dep:quinn", "dep:rustls", "dep:rcgen", "dep:tokio"]
 
 # Build profiles live in the workspace root Cargo.toml — cargo ignores
 # `[profile.*]` set in a member package.
