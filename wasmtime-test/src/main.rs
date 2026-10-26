@@ -6,13 +6,13 @@
 //! # Build the WASI binary first
 //!
 //! ```sh
-//! cargo build -p witan --target wasm32-wasip1 --release
+//! cargo build -p witan --target wasm32-wasip2 --release
 //! ```
 //!
 //! # Run the test
 //!
 //! ```sh
-//! cargo run -p wasmtime-test -- target/wasm32-wasip1/release/witan.wasm
+//! cargo run -p wasmtime-test -- target/wasm32-wasip2/release/witan.wasm
 //! ```
 //!
 //! # Handshake protocol (host-driven I/O model)
@@ -111,9 +111,9 @@ fn main() -> Result<()> {
         eprintln!("Usage: {} <path-to-wasm>", args[0]);
         eprintln!();
         eprintln!("Build the WASI binary first:");
-        eprintln!("  cargo build -p witan --target wasm32-wasip1 --release");
+        eprintln!("  cargo build -p witan --target wasm32-wasip2 --release");
         eprintln!("Then run:");
-        eprintln!("  cargo run -p wasmtime-test -- target/wasm32-wasip1/release/witan.wasm");
+        eprintln!("  cargo run -p wasmtime-test -- target/wasm32-wasip2/release/witan.wasm");
         std::process::exit(1);
     }
 
@@ -482,6 +482,86 @@ fn main() -> Result<()> {
         eprintln!("  ✗  restarted node's envelope rejected");
         std::process::exit(1);
     }
+
+    // ── Step 19: Rotate to the committed key ─────────────────────────────────
+    println!();
+    println!("[ 19 ] Rotating node-d to its committed key 3 …");
+
+    let (kem3, sig3) = seed(3);
+    let (kem4, sig4) = seed(4);
+    let c4 = check!("commitment to key 4", node_d2.key_commitment(&sig4));
+    let lineage2 = check!(
+        "node-d rotates to committed key 3, committing to key 4",
+        node_d2.rotate_keys_under_id(&kem3, &sig3, "epoch-3", Some(&c4))
+    );
+    let summary2 = check!("node-c verifies the lineage", node_c.verify_key_lineage(&lineage2));
+    if summary2["node_id"] != id_before["node_id"] || summary2["sequence"] != 2 {
+        eprintln!("  ✗  lineage summary wrong after committed rotation: {summary2}");
+        std::process::exit(1);
+    }
+    println!("  ✓  same node_id, sequence 2");
+    let env_key3 = check!("node-d signs with key 3", node_d2.encode_envelope(2, b"vote-4"));
+    let ok = check!(
+        "node-b accepts it against the updated lineage",
+        node_b.verify_envelope_from_lineage(&env_key3, &lineage2)
+    );
+    if !ok {
+        eprintln!("  ✗  committed-key envelope rejected");
+        std::process::exit(1);
+    }
+    // A peer still holding the old lineage must not accept the new key. Peers
+    // have to receive the updated lineage after each rotation.
+    if node_b.verify_envelope_from_lineage(&env_key3, &lineage).is_ok() {
+        eprintln!("  ✗  stale lineage accepted the new key");
+        std::process::exit(1);
+    }
+    println!("  ✓  a stale lineage rejects the new key");
+
+    // ── Step 20: Recover without the current key ─────────────────────────────
+    //
+    // Key 3 is treated as lost. Recovery needs only the lineage and the
+    // seed committed to in step 19, and works without an initialized node.
+    println!();
+    println!("[ 20 ] Recovering node-d to committed key 4 without key 3 …");
+
+    drop(node_d2);
+    let (kem9, sig9) = seed(9);
+    if node_c.recover_lineage(&lineage2, &kem9, &sig9, "epoch-9", None).is_ok() {
+        eprintln!("  ✗  recovery to an uncommitted key was accepted");
+        std::process::exit(1);
+    }
+    println!("  ✓  recovery to an uncommitted key refused");
+    let recovered = check!(
+        "recover lineage to key 4 (stateless)",
+        node_c.recover_lineage(&lineage2, &kem4, &sig4, "epoch-4", None)
+    );
+    let summary3 = check!("node-b verifies the recovered lineage", node_b.verify_key_lineage(&recovered));
+    if summary3["node_id"] != id_before["node_id"] || summary3["sequence"] != 3 {
+        eprintln!("  ✗  recovered lineage summary wrong: {summary3}");
+        std::process::exit(1);
+    }
+    println!("  ✓  same node_id, sequence 3");
+    let mut node_d3 = check!("instantiate node-d (recovered)", GossipNode::new("node-d", &wasm_bytes, &engine));
+    check!("node-d gossip_init_with_lineage (seed 4)", node_d3.init_with_lineage(&config_for(4), &recovered));
+    let id_recovered = check!("node-d identity after recovery", node_d3.get_node_identity());
+    if id_recovered["node_id"] != id_before["node_id"] {
+        eprintln!("  ✗  recovered node has a different id");
+        std::process::exit(1);
+    }
+    let env_key4 = check!("recovered node-d signs with key 4", node_d3.encode_envelope(2, b"vote-5"));
+    let ok = check!(
+        "node-b accepts it against the recovered lineage",
+        node_b.verify_envelope_from_lineage(&env_key4, &recovered)
+    );
+    if !ok {
+        eprintln!("  ✗  recovered node's envelope rejected");
+        std::process::exit(1);
+    }
+    if node_b.verify_envelope_from_lineage(&env_key3, &recovered).is_ok() {
+        eprintln!("  ✗  the lost key 3 is still accepted after recovery");
+        std::process::exit(1);
+    }
+    println!("  ✓  the lost key 3 is rejected after recovery");
 
     // ── Done ──────────────────────────────────────────────────────────────────
     println!();

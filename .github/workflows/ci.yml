@@ -33,10 +33,12 @@ jobs:
       - name: artifact is a valid component
         run: wasm-tools validate --features all target/wasm32-wasip2/release/witan.wasm
 
-      - name: component exports the gossip interface
+      - name: component exports the gossip and key-lineage interfaces
         run: |
           wasm-tools component wit target/wasm32-wasip2/release/witan.wasm \
             | grep -q 'export witan:gossip/gossip-protocol@0.1.0;'
+          wasm-tools component wit target/wasm32-wasip2/release/witan.wasm \
+            | grep -q 'export witan:gossip/key-lineage@0.1.0;'
 
       - name: downstream-consumer check (3-node wasmtime mesh)
         run: cargo run -p wasmtime-test -- target/wasm32-wasip2/release/witan.wasm
@@ -164,3 +166,13 @@ jobs:
           wasm-tools validate --features all "$artifact"
           wasm-tools component wit "$artifact" \
             | grep -q 'export witan:gossip/gossip-protocol@0.1.0;'
+          wasm-tools component wit "$artifact" \
+            | grep -q 'export witan:gossip/key-lineage@0.1.0;'
+
+      # Drive the packaged artifact, not just inspect it: the same harness the
+      # component job runs, including the host built from the 0.2.1 WIT.
+      - name: downstream-consumer check on the packaged artifact
+        run: |
+          set -euo pipefail
+          pkg="$(find target/package -maxdepth 1 -type d -name 'witan-*' | head -1)"
+          cargo run -p wasmtime-test -- "$pkg/target/wasm32-wasip2/release/witan.wasm"

@@ -326,6 +326,28 @@ impl GossipNode {
             .map_err(|e| err("gossip_verify_envelope_from_lineage", e))
     }
 
+    /// Extend a lineage to its pre-committed keys without the current key.
+    pub fn recover_lineage(
+        &mut self,
+        lineage: &[u8],
+        kem_seed: &[u8],
+        sig_seed: &[u8],
+        key_epoch: &str,
+        next_key_commitment: Option<&[u8]>,
+    ) -> Result<Vec<u8>> {
+        self.bindings
+            .witan_gossip_key_lineage()
+            .call_gossip_recover_lineage(
+                &mut self.store,
+                lineage,
+                kem_seed,
+                sig_seed,
+                key_epoch,
+                next_key_commitment,
+            )?
+            .map_err(|e| err("gossip_recover_lineage", e))
+    }
+
     /// Pre-rotation commitment for a signing seed.
     pub fn key_commitment(&mut self, sig_seed: &[u8]) -> Result<Vec<u8>> {
         self.bindings
