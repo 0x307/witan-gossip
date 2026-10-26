@@ -63,6 +63,9 @@ interface, build instructions, and API reference.
   `witan:gossip/gossip-protocol@0.1.0`. CI asserts the export exists on the built artifact.
 - A 3-node in-process `wasmtime` mesh driving the component through mutual handshakes,
   envelope signing, cross-node verification, and disconnect.
+- Key rotation under a stable node id (`key-lineage` interface, since 0.2.2). The harness drives it
+  through the component: rotate, verify against the lineage, refuse an uncommitted key, restart on
+  the new keys. It also instantiates the component from a host built against the 0.2.1 WIT.
 - `cargo component build` as an equivalent path via `wasm32-wasip1` plus an adapter.
 - The deprecated `wasi-abi` C-ABI surface, built both in isolation and alongside the
   component export.

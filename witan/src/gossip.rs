@@ -14,6 +14,7 @@ use crate::error::GossipError;
 use crate::handshake::HandshakeManager;
 use crate::identity::NodeIdentity;
 use crate::quorum::QuorumTracker;
+use crate::rotation::{KeyLineage, KeyRotation};
 use crate::session::{SessionRecord, SessionStore};
 use crate::types::{GossipStats, PayloadType};
 
@@ -382,6 +383,30 @@ impl GossipEngine {
         let new_node_id = new_identity.node_id.clone();
         self.identity = Arc::new(new_identity);
         Ok(new_node_id)
+    }
+
+    /// Rotate to `next` while keeping this node's id.
+    ///
+    /// `lineage` must be this node's lineage; it is extended with the signed
+    /// rotation record, which is also returned. `next` takes over as the
+    /// engine identity under the lineage's stable id. Existing sessions are
+    /// unaffected; new envelopes are signed with `next`'s key.
+    pub fn rotate_keys_under_id(
+        &mut self,
+        lineage: &mut KeyLineage,
+        mut next: NodeIdentity,
+        next_key_commitment: Option<[u8; 32]>,
+        now_ms: u64,
+    ) -> Result<KeyRotation, GossipError> {
+        if lineage.node_id() != self.identity.node_id {
+            return Err(GossipError::IdentityError(
+                "lineage does not belong to this node".to_string(),
+            ));
+        }
+        let rotation = lineage.rotate(&self.identity, &next, next_key_commitment, now_ms)?;
+        next.node_id = lineage.node_id().to_string();
+        self.identity = Arc::new(next);
+        Ok(rotation)
     }
 
     // ── Standalone Signature Verification ────────────────────────────────────

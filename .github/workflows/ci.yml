@@ -89,6 +89,17 @@ jobs:
       # And alongside the component export, which is how it actually ships.
       - run: cargo build -p witan --target wasm32-wasip1 --release --features wasi-abi
 
+  # Compare the public API with the latest release on crates.io. A change that
+  # needs a bigger version bump than witan/Cargo.toml has fails here, before
+  # it can be published.
+  semver-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: obi1kenobi/cargo-semver-checks-action@v2
+        with:
+          package: witan
+
   dry-run-publish:
     runs-on: ubuntu-latest
     steps:

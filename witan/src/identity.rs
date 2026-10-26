@@ -203,7 +203,13 @@ impl NodeIdentity {
         self.sig_keypair.public_key().bytes.clone()
     }
 
-    /// Get KEM public key as canonical bytes (x25519 || mlkem).
+    /// Get KEM public key as canonical bytes (x25519 || mlkem), the form the
+    /// node id is derived from.
+    pub fn kem_public_key_canonical_bytes(&self) -> Result<Vec<u8>, GossipError> {
+        Self::kem_public_key_bytes(&self.kem_keypair.public_key())
+    }
+
+    /// Canonical bytes (x25519 || mlkem) of a hybrid KEM public key.
     fn kem_public_key_bytes(pk: &pqc_kem::types::HybridPublicKey) -> Result<Vec<u8>, GossipError> {
         let x25519 = pk
             .x25519_bytes()

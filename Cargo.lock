@@ -3120,7 +3120,7 @@ dependencies = [
 
 [[package]]
 name = "witan"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "bincode",
  "getrandom 0.2.17",

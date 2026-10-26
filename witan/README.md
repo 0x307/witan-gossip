@@ -675,6 +675,61 @@ Rotate node identity keys. Generates a fresh ephemeral `NodeIdentity`. Existing 
 
 ---
 
+### Key rotation under a stable id (`key-lineage`, since 0.2.2)
+
+`gossip_rotate_keys` gives the node a new id, because a node id is
+`SHA-256(kem_pk || sig_pk)`. A validator that has to rotate keys and stay in a
+validator set keyed by its id needs the id to stay the same. These calls make
+that possible:
+
+```rust
+pub fn gossip_rotate_keys_under_id(kem_seed: &[u8], sig_seed: &[u8], key_epoch: &str,
+    next_key_commitment: Option<&[u8]>) -> Result<Vec<u8>, GossipError>   // -> lineage
+pub fn gossip_init_with_lineage(config_json: &str, lineage: &[u8]) -> Result<(), GossipError>
+pub fn gossip_get_key_lineage() -> Result<Vec<u8>, GossipError>
+pub fn gossip_verify_key_lineage(lineage: &[u8]) -> Result<String, GossipError>   // JSON summary
+pub fn gossip_verify_envelope_from_lineage(envelope: &[u8], lineage: &[u8]) -> Result<bool, GossipError>
+pub fn gossip_key_commitment(sig_seed: &[u8]) -> Result<Vec<u8>, GossipError>
+pub fn gossip_recover_lineage(lineage: &[u8], kem_seed: &[u8], sig_seed: &[u8], key_epoch: &str,
+    next_key_commitment: Option<&[u8]>) -> Result<Vec<u8>, GossipError>
+```
+
+The component exports the same calls as a second interface,
+`witan:gossip/key-lineage@0.1.0`. `gossip-protocol@0.1.0` is unchanged, so
+hosts built against 0.2.1 bind to it exactly as before.
+
+A **lineage** is the node's inception public keys plus a chain of rotation
+records. Each record is signed by the new key (proof of possession) and
+authorized by the previous key. The id stays the one derived from the
+inception keys. The lineage is opaque bytes: the host persists it, and
+distributes it wherever it distributes validator-set membership.
+
+- **Rotate:** call `gossip_rotate_keys_under_id` with the new seeds. Persist
+  the returned lineage and the new seeds, then send the lineage to peers.
+- **Restart:** call `gossip_init_with_lineage` with a config carrying the
+  *current* seeds, plus the lineage. The node runs under its stable id.
+- **Verify:** peers that pin a validator call
+  `gossip_verify_envelope_from_lineage`. It runs the usual envelope checks,
+  then requires the sender to be that node using its current key. A retired
+  key's envelopes fail. Plain `gossip_verify_envelope` still accepts rotated
+  envelopes, as it did in 0.2.1.
+- **Pre-rotation (recommended for validators):** pass
+  `next_key_commitment = gossip_key_commitment(next_sig_seed)` and keep that
+  seed offline. The next rotation must then use the committed key, and it
+  needs no signature from the current key. Someone who steals the current key
+  cannot rotate the node away from you. If the current key is lost, rebuild
+  with `gossip_recover_lineage` and restart with `gossip_init_with_lineage`.
+  Without a commitment, whoever holds the current key controls the next
+  rotation.
+- **Forks:** two different valid records at the same position mean two keys
+  each authorized a successor. `KeyLineage::apply` reports this as a fork
+  instead of choosing one.
+
+Witan still does not check a peer's id against its keys during the handshake.
+Lineage checks apply to envelopes.
+
+---
+
 ### `gossip_now_ms`
 
 ```rust

@@ -10,10 +10,26 @@ use crate::config::GossipConfig;
 use crate::error::GossipError;
 use crate::gossip::GossipEngine;
 use crate::identity::NodeIdentity;
+use crate::rotation::{key_commitment_for_seed, KeyLineage};
 
 // ── Global State ──────────────────────────────────────────────────────────────
 
 static GOSSIP_STATE: OnceLock<Mutex<GossipEngine>> = OnceLock::new();
+
+/// This node's key lineage. Kept beside the engine rather than in it so that
+/// `GossipEngine`'s public field set is unchanged. Lock order: engine, then
+/// lineage.
+static LINEAGE: Mutex<Option<KeyLineage>> = Mutex::new(None);
+
+fn with_lineage<F, T>(f: F) -> Result<T, GossipError>
+where
+    F: FnOnce(&mut Option<KeyLineage>) -> Result<T, GossipError>,
+{
+    let mut guard = LINEAGE
+        .lock()
+        .map_err(|e| GossipError::CryptoError(format!("mutex poisoned: {e}")))?;
+    f(&mut guard)
+}
 
 /// Acquire the global GossipEngine mutex guard.
 ///
@@ -79,6 +95,51 @@ pub fn gossip_init(config_json: &str) -> Result<(), GossipError> {
         NodeIdentity::generate(&resolved.key_epoch)?
     };
 
+    let lineage = KeyLineage::from_identity(&identity)?;
+    install(resolved, identity, lineage)
+}
+
+/// Initialize a node that has rotated keys under a stable id.
+///
+/// `config_json` must carry `kem_seed_hex` and `sig_seed_hex` for the node's
+/// **current** keys. `lineage_bytes` is the node's encoded [`KeyLineage`]
+/// (from [`gossip_get_key_lineage`]); it is verified, and its current keys
+/// must be the ones the seeds produce. The node then runs under the lineage's
+/// stable id.
+pub fn gossip_init_with_lineage(config_json: &str, lineage_bytes: &[u8]) -> Result<(), GossipError> {
+    if GOSSIP_STATE.get().is_some() {
+        return Err(GossipError::AlreadyInitialized);
+    }
+
+    let resolved = GossipConfig::from_json(config_json)?.resolve()?;
+    let (Some(kem_seed), Some(sig_seed)) = (&resolved.kem_seed, &resolved.sig_seed) else {
+        return Err(GossipError::ConfigError(
+            "gossip_init_with_lineage needs kem_seed_hex and sig_seed_hex for the current keys"
+                .to_string(),
+        ));
+    };
+    let mut identity =
+        NodeIdentity::from_seeds(&kem_seed[..32], &kem_seed[32..96], sig_seed, &resolved.key_epoch)?;
+
+    let lineage = KeyLineage::decode(lineage_bytes)?;
+    if identity.sig_public_key_bytes() != lineage.current_sig_public_key()
+        || identity.kem_public_key_canonical_bytes()? != lineage.current_kem_public_key()
+    {
+        return Err(GossipError::IdentityError(format!(
+            "seeds are not the current keys of lineage {} (sequence {})",
+            lineage.node_id(),
+            lineage.sequence()
+        )));
+    }
+    identity.node_id = lineage.node_id().to_string();
+    install(resolved, identity, lineage)
+}
+
+fn install(
+    resolved: crate::config::ResolvedConfig,
+    identity: NodeIdentity,
+    lineage: KeyLineage,
+) -> Result<(), GossipError> {
     let engine = GossipEngine::new(resolved, identity);
 
     // Store in global state (fails if already set — race condition guard)
@@ -86,7 +147,10 @@ pub fn gossip_init(config_json: &str) -> Result<(), GossipError> {
         .set(Mutex::new(engine))
         .map_err(|_| GossipError::AlreadyInitialized)?;
 
-    Ok(())
+    with_lineage(|l| {
+        *l = Some(lineage);
+        Ok(())
+    })
 }
 
 /// Publish a message to the gossip mesh.
@@ -204,11 +268,145 @@ pub fn gossip_get_session(peer_addr: &str) -> Result<String, GossipError> {
 }
 
 /// Rotate node identity keys. Returns new node_id hex string.
+///
+/// The new keys get a new id and start a new lineage. To keep the id, use
+/// [`gossip_rotate_keys_under_id`].
 pub fn gossip_rotate_keys() -> Result<String, GossipError> {
     with_engine(|engine| {
         let key_epoch = engine.config.key_epoch.clone();
-        engine.rotate_keys(&key_epoch)
+        let node_id = engine.rotate_keys(&key_epoch)?;
+        let lineage = KeyLineage::from_identity(&engine.identity)?;
+        with_lineage(|l| {
+            *l = Some(lineage);
+            Ok(node_id)
+        })
     })
+}
+
+/// Rotate to the keys `kem_seed` (96 bytes) and `sig_seed` (32 bytes) produce,
+/// keeping this node's id. Returns the updated encoded lineage, which the host
+/// must persist (it is needed to restart, see [`gossip_init_with_lineage`])
+/// and distribute to peers that pin this node.
+///
+/// `next_key_commitment` (32 bytes, from [`gossip_key_commitment`]) pins the
+/// key the following rotation must use. If the current state already carries
+/// a commitment, `sig_seed` must produce the committed key.
+pub fn gossip_rotate_keys_under_id(
+    kem_seed: &[u8],
+    sig_seed: &[u8],
+    key_epoch: &str,
+    next_key_commitment: Option<&[u8]>,
+) -> Result<Vec<u8>, GossipError> {
+    let next = identity_from_seed_bytes(kem_seed, sig_seed, key_epoch)?;
+    let commitment = parse_commitment(next_key_commitment)?;
+    let now_ms = current_time_unix_ms();
+    with_engine(|engine| {
+        with_lineage(|l| {
+            let lineage = l.as_mut().ok_or(GossipError::NotInitialized)?;
+            // Work on a copy so a failed rotation leaves the stored lineage intact.
+            let mut updated = lineage.clone();
+            engine.rotate_keys_under_id(&mut updated, next, commitment, now_ms)?;
+            let bytes = updated.encode()?;
+            *lineage = updated;
+            Ok(bytes)
+        })
+    })
+}
+
+/// Extend `lineage_bytes` to the pre-committed keys without the current key,
+/// for a node whose current key is lost or compromised. Returns the extended
+/// lineage; initialize the node with it via [`gossip_init_with_lineage`].
+/// Stateless: needs no `gossip_init`.
+pub fn gossip_recover_lineage(
+    lineage_bytes: &[u8],
+    kem_seed: &[u8],
+    sig_seed: &[u8],
+    key_epoch: &str,
+    next_key_commitment: Option<&[u8]>,
+) -> Result<Vec<u8>, GossipError> {
+    let mut lineage = KeyLineage::decode(lineage_bytes)?;
+    let next = identity_from_seed_bytes(kem_seed, sig_seed, key_epoch)?;
+    lineage.recover(&next, parse_commitment(next_key_commitment)?, current_time_unix_ms())?;
+    lineage.encode()
+}
+
+/// Get this node's encoded key lineage.
+pub fn gossip_get_key_lineage() -> Result<Vec<u8>, GossipError> {
+    with_lineage(|l| l.as_ref().ok_or(GossipError::NotInitialized)?.encode())
+}
+
+/// Verify an encoded key lineage and summarize its current state as JSON:
+/// `{"node_id", "sequence", "sig_public_key_hex", "kem_public_key_hex",
+/// "key_epoch", "next_key_commitment_hex"}` (the last is null when unset).
+/// Stateless: needs no `gossip_init`.
+pub fn gossip_verify_key_lineage(lineage_bytes: &[u8]) -> Result<String, GossipError> {
+    let lineage = KeyLineage::decode(lineage_bytes)?;
+    let summary = serde_json::json!({
+        "node_id": lineage.node_id(),
+        "sequence": lineage.sequence(),
+        "sig_public_key_hex": hex::encode(lineage.current_sig_public_key()),
+        "kem_public_key_hex": hex::encode(lineage.current_kem_public_key()),
+        "key_epoch": lineage.current_key_epoch(),
+        "next_key_commitment_hex": lineage.next_key_commitment().map(hex::encode),
+    });
+    serde_json::to_string(&summary)
+        .map_err(|e| GossipError::SerializationError(format!("JSON serialize: {e}")))
+}
+
+/// Verify an envelope as [`gossip_verify_envelope`] does, and also require
+/// that its sender is the lineage's node speaking with its current key.
+pub fn gossip_verify_envelope_from_lineage(
+    envelope_bytes: &[u8],
+    lineage_bytes: &[u8],
+) -> Result<bool, GossipError> {
+    let lineage = KeyLineage::decode(lineage_bytes)?;
+    let now_ms = current_time_unix_ms();
+    with_engine(|engine| {
+        let envelope = crate::envelope::decode_envelope(envelope_bytes)?;
+        if let Err(e) = lineage.check_envelope_sender(&envelope) {
+            engine.stats.messages_dropped += 1;
+            return Err(e);
+        }
+        engine.verify_envelope_bytes(envelope_bytes, now_ms)
+    })
+}
+
+/// Pre-rotation commitment to the signing key `sig_seed` (32 bytes) produces.
+/// Stateless: needs no `gossip_init`.
+pub fn gossip_key_commitment(sig_seed: &[u8]) -> Result<Vec<u8>, GossipError> {
+    key_commitment_for_seed(sig_seed).map(|c| c.to_vec())
+}
+
+fn identity_from_seed_bytes(
+    kem_seed: &[u8],
+    sig_seed: &[u8],
+    key_epoch: &str,
+) -> Result<NodeIdentity, GossipError> {
+    if kem_seed.len() != 96 {
+        return Err(GossipError::InvalidInput(format!(
+            "kem_seed must be 96 bytes, got {}",
+            kem_seed.len()
+        )));
+    }
+    if sig_seed.len() != 32 {
+        return Err(GossipError::InvalidInput(format!(
+            "sig_seed must be 32 bytes, got {}",
+            sig_seed.len()
+        )));
+    }
+    NodeIdentity::from_seeds(&kem_seed[..32], &kem_seed[32..], sig_seed, key_epoch)
+}
+
+fn parse_commitment(c: Option<&[u8]>) -> Result<Option<[u8; 32]>, GossipError> {
+    c.map(|b| {
+        b.try_into().map_err(|_| {
+            GossipError::InvalidInput(format!(
+                "next_key_commitment must be 32 bytes, got {}",
+                b.len()
+            ))
+        })
+    })
+    .transpose()
 }
 
 /// Get the current Unix timestamp in milliseconds.
