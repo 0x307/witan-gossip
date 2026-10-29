@@ -9,6 +9,42 @@ document for what counts as breaking inside `0.x`.
 
 ## [Unreleased]
 
+## [0.2.2]
+
+### Added
+
+- Key rotation under a stable node id. Before this, a node id was
+  `SHA-256(kem_pk || sig_pk)`, so new keys meant a new id. That made it
+  impossible to rotate a validator's keys and keep it in a validator set keyed
+  by id. A new `rotation` module adds `KeyLineage` (the inception keys plus a
+  signed chain of `KeyRotation` records) and `KeyRotation`. Each record is
+  signed by the new key and authorized by the previous key, or by a
+  pre-rotation commitment the previous state made. Lineages travel as bincode.
+- API: `gossip_rotate_keys_under_id`, `gossip_init_with_lineage`,
+  `gossip_get_key_lineage`, `gossip_verify_key_lineage`,
+  `gossip_verify_envelope_from_lineage`, `gossip_key_commitment`, and
+  `gossip_recover_lineage`. Engine: `GossipEngine::rotate_keys_under_id`.
+  Identity: `NodeIdentity::kem_public_key_canonical_bytes`.
+- Component: a second exported interface, `witan:gossip/key-lineage@0.1.0`,
+  carries the same calls. `witan:gossip/gossip-protocol@0.1.0` is unchanged.
+- Tests: golden vectors for envelope and lineage bytes. The envelope vector
+  was checked against the published 0.2.1. CI also gained a host built from
+  the 0.2.1 WIT that drives the new component, and a `cargo semver-checks`
+  job against the latest published release.
+
+### Unchanged
+
+- No wire format changes and no changes to existing public items.
+  `gossip_rotate_keys` still gives the node a new id. Rotated nodes send their
+  stable id with their current key, which 0.2.1 peers already accept.
+
+## [0.2.1] — 2026-09-10
+
+### Changed
+
+- `pqc-sig` dependency `0.3` → `0.4` (0.3.x is yanked from crates.io). No
+  API or wire change.
+
 ## [0.2.0] — 2026-09-04
 
 ### Added

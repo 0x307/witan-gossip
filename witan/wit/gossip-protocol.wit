@@ -336,13 +336,99 @@ interface gossip-protocol {
     gossip-get-version: func() -> string;
 }
 
+/// Key rotation under a stable node id (added in witan 0.2.2).
+///
+/// A separate interface, so that `gossip-protocol` is unchanged and hosts
+/// built against it keep binding to it exactly as before. Both interfaces
+/// act on the same node: the engine `gossip-init` or
+/// `gossip-init-with-lineage` creates.
+///
+/// A lineage is the node's inception public keys plus a signed chain of
+/// rotation records (see `src/rotation.rs` for the rules). It travels as
+/// opaque bincode bytes. Every function that takes one verifies the whole
+/// chain first.
+interface key-lineage {
+    use gossip-protocol.{gossip-error};
+
+    /// Initialize a node that has rotated keys under a stable id. Use instead
+    /// of `gossip-init` when restarting a rotated node.
+    ///
+    /// `config-json` must carry `kem_seed_hex` and `sig_seed_hex` for the
+    /// node's current keys; `lineage` is what `gossip-get-key-lineage` (or a
+    /// rotation) last returned. Fails unless the lineage verifies and its
+    /// current keys are the ones the seeds produce.
+    gossip-init-with-lineage: func(
+        config-json: string,
+        lineage: list<u8>,
+    ) -> result<_, gossip-error>;
+
+    /// Rotate to the keys `kem-seed` (96 bytes) and `sig-seed` (32 bytes)
+    /// produce, keeping the node id. Returns the updated lineage, which the
+    /// host must persist and distribute to peers that pin this node.
+    ///
+    /// `next-key-commitment` (32 bytes, from `gossip-key-commitment`) pins the
+    /// signing key the following rotation must use, so that a stolen current
+    /// key cannot be used to rotate. If the current state already carries a
+    /// commitment, `sig-seed` must produce the committed key.
+    ///
+    /// On failure the node keeps its current keys and lineage.
+    gossip-rotate-keys-under-id: func(
+        kem-seed: list<u8>,
+        sig-seed: list<u8>,
+        key-epoch: string,
+        next-key-commitment: option<list<u8>>,
+    ) -> result<list<u8>, gossip-error>;
+
+    /// Extend `lineage` to the pre-committed keys without the current key,
+    /// for a node whose current key is lost or compromised. Requires the
+    /// lineage's current state to carry a commitment. Returns the extended
+    /// lineage. Needs no `gossip-init`.
+    gossip-recover-lineage: func(
+        lineage: list<u8>,
+        kem-seed: list<u8>,
+        sig-seed: list<u8>,
+        key-epoch: string,
+        next-key-commitment: option<list<u8>>,
+    ) -> result<list<u8>, gossip-error>;
+
+    /// This node's current lineage.
+    gossip-get-key-lineage: func() -> result<list<u8>, gossip-error>;
+
+    /// Verify a lineage and summarize its current state. Needs no
+    /// `gossip-init`.
+    ///
+    /// Returns JSON:
+    /// {
+    ///   "node_id": "hex...",
+    ///   "sequence": 0,
+    ///   "sig_public_key_hex": "hex...",
+    ///   "kem_public_key_hex": "hex...",
+    ///   "key_epoch": "...",
+    ///   "next_key_commitment_hex": "hex..." | null
+    /// }
+    gossip-verify-key-lineage: func(lineage: list<u8>) -> result<string, gossip-error>;
+
+    /// Verify an envelope as `gossip-verify-envelope` does, and also require
+    /// that its sender is the lineage's node using its current signing key.
+    /// Envelopes signed with a retired key fail.
+    gossip-verify-envelope-from-lineage: func(
+        envelope-bytes: list<u8>,
+        lineage: list<u8>,
+    ) -> result<bool, gossip-error>;
+
+    /// Pre-rotation commitment to the signing key `sig-seed` (32 bytes)
+    /// produces. Needs no `gossip-init`.
+    gossip-key-commitment: func(sig-seed: list<u8>) -> result<list<u8>, gossip-error>;
+}
+
 // -------------------------------------------------------------------------
 // World definition
 // -------------------------------------------------------------------------
 
 /// The WASM component world for the Witan-Gossip gossip protocol.
 ///
-/// The component exports the gossip-protocol interface.
+/// The component exports the gossip-protocol interface and, since 0.2.2, the
+/// key-lineage interface.
 ///
 /// WASI imports (clocks, random, stdio) are not declared here: on
 /// wasm32-wasip2 the Rust standard library supplies them, and they appear in
@@ -351,4 +437,6 @@ interface gossip-protocol {
 world gossip-world {
     /// The gossip protocol API exported by the component.
     export gossip-protocol;
+    /// Key rotation under a stable node id.
+    export key-lineage;
 }

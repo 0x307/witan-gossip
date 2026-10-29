@@ -269,4 +269,128 @@ impl GossipNode {
             .map_err(|e| err("gossip_get_stats", e))?;
         serde_json::from_str(&json).context("parsing stats JSON")
     }
+
+    // ── Key lineage (stable-id rotation) ──────────────────────────────────────
+
+    /// Initialize a rotated node from its current seeds and lineage.
+    pub fn init_with_lineage(&mut self, config_json: &str, lineage: &[u8]) -> Result<()> {
+        self.bindings
+            .witan_gossip_key_lineage()
+            .call_gossip_init_with_lineage(&mut self.store, config_json, lineage)?
+            .map_err(|e| err("gossip_init_with_lineage", e))
+    }
+
+    /// Rotate to seeded keys under the same node id, returning the new lineage.
+    pub fn rotate_keys_under_id(
+        &mut self,
+        kem_seed: &[u8],
+        sig_seed: &[u8],
+        key_epoch: &str,
+        next_key_commitment: Option<&[u8]>,
+    ) -> Result<Vec<u8>> {
+        self.bindings
+            .witan_gossip_key_lineage()
+            .call_gossip_rotate_keys_under_id(
+                &mut self.store,
+                kem_seed,
+                sig_seed,
+                key_epoch,
+                next_key_commitment,
+            )?
+            .map_err(|e| err("gossip_rotate_keys_under_id", e))
+    }
+
+    /// This node's current lineage.
+    pub fn get_key_lineage(&mut self) -> Result<Vec<u8>> {
+        self.bindings
+            .witan_gossip_key_lineage()
+            .call_gossip_get_key_lineage(&mut self.store)?
+            .map_err(|e| err("gossip_get_key_lineage", e))
+    }
+
+    /// Verify a lineage and return its summary as parsed JSON.
+    pub fn verify_key_lineage(&mut self, lineage: &[u8]) -> Result<serde_json::Value> {
+        let json = self
+            .bindings
+            .witan_gossip_key_lineage()
+            .call_gossip_verify_key_lineage(&mut self.store, lineage)?
+            .map_err(|e| err("gossip_verify_key_lineage", e))?;
+        serde_json::from_str(&json).context("parsing lineage summary JSON")
+    }
+
+    /// Verify an envelope and require its sender to hold the lineage's current key.
+    pub fn verify_envelope_from_lineage(&mut self, envelope: &[u8], lineage: &[u8]) -> Result<bool> {
+        self.bindings
+            .witan_gossip_key_lineage()
+            .call_gossip_verify_envelope_from_lineage(&mut self.store, envelope, lineage)?
+            .map_err(|e| err("gossip_verify_envelope_from_lineage", e))
+    }
+
+    /// Extend a lineage to its pre-committed keys without the current key.
+    pub fn recover_lineage(
+        &mut self,
+        lineage: &[u8],
+        kem_seed: &[u8],
+        sig_seed: &[u8],
+        key_epoch: &str,
+        next_key_commitment: Option<&[u8]>,
+    ) -> Result<Vec<u8>> {
+        self.bindings
+            .witan_gossip_key_lineage()
+            .call_gossip_recover_lineage(
+                &mut self.store,
+                lineage,
+                kem_seed,
+                sig_seed,
+                key_epoch,
+                next_key_commitment,
+            )?
+            .map_err(|e| err("gossip_recover_lineage", e))
+    }
+
+    /// Pre-rotation commitment for a signing seed.
+    pub fn key_commitment(&mut self, sig_seed: &[u8]) -> Result<Vec<u8>> {
+        self.bindings
+            .witan_gossip_key_lineage()
+            .call_gossip_key_commitment(&mut self.store, sig_seed)?
+            .map_err(|e| err("gossip_key_commitment", e))
+    }
+}
+
+// ── Hosts built against witan 0.2.1 ───────────────────────────────────────────
+
+/// Host bindings generated from the WIT that shipped in witan 0.2.1
+/// (`wit-0.2.1/`, copied verbatim from the published crate). A host built
+/// before the key-lineage interface existed must still instantiate and drive
+/// the current component; this module is that host.
+pub mod legacy_0_2_1 {
+    use super::*;
+
+    wasmtime::component::bindgen!({
+        world: "gossip-world",
+        path: "wit-0.2.1",
+    });
+
+    /// Instantiate the component through the 0.2.1 bindings, initialize it,
+    /// and have it sign an envelope. Returns the version string and the
+    /// envelope bytes.
+    pub fn smoke(component_bytes: &[u8], engine: &Engine) -> Result<(String, Vec<u8>)> {
+        let component = Component::from_binary(engine, component_bytes)?;
+        let mut linker = Linker::new(engine);
+        add_to_linker_sync(&mut linker)?;
+        let ctx = Ctx {
+            table: ResourceTable::new(),
+            wasi: WasiCtxBuilder::new().inherit_stdio().build(),
+        };
+        let mut store = Store::new(engine, ctx);
+        let bindings = GossipWorld::instantiate(&mut store, &component, &linker)?;
+        let api = bindings.witan_gossip_gossip_protocol();
+        api.call_gossip_init(&mut store, "{}")?
+            .map_err(|e| anyhow::anyhow!("legacy gossip_init: {e:?}"))?;
+        let version = api.call_gossip_get_version(&mut store)?;
+        let envelope = api
+            .call_gossip_encode_envelope(&mut store, 0, b"legacy host")?
+            .map_err(|e| anyhow::anyhow!("legacy gossip_encode_envelope: {e:?}"))?;
+        Ok((version, envelope))
+    }
 }

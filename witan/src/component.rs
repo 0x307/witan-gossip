@@ -21,6 +21,7 @@ wit_bindgen::generate!({
 });
 
 use exports::witan::gossip::gossip_protocol::{Guest, GossipError as WitError};
+use exports::witan::gossip::key_lineage::Guest as KeyLineageGuest;
 
 use crate::api;
 use crate::error::GossipError;
@@ -143,6 +144,63 @@ impl Guest for WitanGossip {
 
     fn gossip_get_version() -> String {
         api::gossip_get_version()
+    }
+}
+
+impl KeyLineageGuest for WitanGossip {
+    fn gossip_init_with_lineage(config_json: String, lineage: Vec<u8>) -> Result<(), WitError> {
+        api::gossip_init_with_lineage(&config_json, &lineage).map_err(Into::into)
+    }
+
+    fn gossip_rotate_keys_under_id(
+        kem_seed: Vec<u8>,
+        sig_seed: Vec<u8>,
+        key_epoch: String,
+        next_key_commitment: Option<Vec<u8>>,
+    ) -> Result<Vec<u8>, WitError> {
+        api::gossip_rotate_keys_under_id(
+            &kem_seed,
+            &sig_seed,
+            &key_epoch,
+            next_key_commitment.as_deref(),
+        )
+        .map_err(Into::into)
+    }
+
+    fn gossip_recover_lineage(
+        lineage: Vec<u8>,
+        kem_seed: Vec<u8>,
+        sig_seed: Vec<u8>,
+        key_epoch: String,
+        next_key_commitment: Option<Vec<u8>>,
+    ) -> Result<Vec<u8>, WitError> {
+        api::gossip_recover_lineage(
+            &lineage,
+            &kem_seed,
+            &sig_seed,
+            &key_epoch,
+            next_key_commitment.as_deref(),
+        )
+        .map_err(Into::into)
+    }
+
+    fn gossip_get_key_lineage() -> Result<Vec<u8>, WitError> {
+        api::gossip_get_key_lineage().map_err(Into::into)
+    }
+
+    fn gossip_verify_key_lineage(lineage: Vec<u8>) -> Result<String, WitError> {
+        api::gossip_verify_key_lineage(&lineage).map_err(Into::into)
+    }
+
+    fn gossip_verify_envelope_from_lineage(
+        envelope_bytes: Vec<u8>,
+        lineage: Vec<u8>,
+    ) -> Result<bool, WitError> {
+        api::gossip_verify_envelope_from_lineage(&envelope_bytes, &lineage).map_err(Into::into)
+    }
+
+    fn gossip_key_commitment(sig_seed: Vec<u8>) -> Result<Vec<u8>, WitError> {
+        api::gossip_key_commitment(&sig_seed).map_err(Into::into)
     }
 }
 

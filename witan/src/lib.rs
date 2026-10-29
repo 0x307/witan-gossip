@@ -29,6 +29,7 @@
 //! - [`handshake`] — PQC 4-message handshake state machine
 //! - [`identity`] — NodeIdentity generation and management
 //! - [`quorum`] — BFT quorum tracker (≥2/3 peers)
+//! - [`rotation`] — Key rotation under a stable node id (KeyLineage)
 //! - [`session`] — SessionStore and session ID derivation
 //! - [`types`] — All domain types (GossipEnvelope, PayloadType, etc.)
 
@@ -60,6 +61,7 @@ pub mod gossip;
 pub mod handshake;
 pub mod identity;
 pub mod quorum;
+pub mod rotation;
 pub mod session;
 pub mod types;
 
@@ -73,22 +75,30 @@ pub use api::{
     gossip_decode_envelope,
     gossip_disconnect_peer,
     gossip_encode_envelope,
+    gossip_get_key_lineage,
     gossip_get_node_identity,
     gossip_get_peers,
     gossip_get_session,
     gossip_get_stats,
     gossip_get_version,
     gossip_init,
+    gossip_init_with_lineage,
+    gossip_key_commitment,
     gossip_now_ms,
     gossip_process_handshake_bytes,
     gossip_publish,
+    gossip_recover_lineage,
     gossip_rotate_keys,
+    gossip_rotate_keys_under_id,
     gossip_verify_envelope,
+    gossip_verify_envelope_from_lineage,
+    gossip_verify_key_lineage,
     gossip_verify_signature,
 };
 
 pub use config::GossipConfig;
 pub use error::GossipError;
+pub use rotation::{KeyLineage, KeyRotation, SIG_CTX_KEY_POSSESSION, SIG_CTX_KEY_ROTATION};
 pub use types::{
     GossipEnvelope, GossipStats, HandshakeAck, HandshakeFinish, HandshakeFinishAck,
     HandshakeProbe, MessageKind, NodeIdentityPublic, PayloadType, PeerInfo,
